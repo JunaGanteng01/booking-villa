@@ -1,0 +1,346 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum VillaStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  MAINTENANCE
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  BOOKED
+  PENDING
+  MAINTENANCE
+  BLOCKED
+}
+
+enum BookingStatus {
+  DRAFT
+  PENDING
+  WAITING_PAYMENT
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  EXPIRED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum BookingLineItemType {
+  ROOM
+  EXTRA_GUEST
+  ADD_ON
+  DISCOUNT
+  SERVICE_FEE
+  TAX
+  PAYMENT_FEE
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum PaymentMethodType {
+  BANK_TRANSFER
+  VIRTUAL_ACCOUNT
+  CREDIT_CARD
+  E_WALLET
+  QRIS
+}
+
+enum PaymentProvider {
+  MANUAL
+  MIDTRANS
+  STRIPE
+  XENDIT
+  MOCK
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?  @db.Text
+  villas      Villa[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model Amenity {
+  id        String         @id @default(cuid())
+  name      String         @unique
+  slug      String         @unique
+  icon      String?
+  villas    VillaAmenity[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@map("amenities")
+}
+
+model Villa {
+  id                   String      @id @default(cuid())
+  categoryId           String
+  slug                 String      @unique
+  name                 String
+  shortDescription     String?     @db.VarChar(320)
+  description          String      @db.Text
+  location             String
+  address              String?     @db.Text
+  city                 String      @default("Bali")
+  province             String      @default("Bali")
+  country              String      @default("Indonesia")
+  latitude             Decimal?    @db.Decimal(10, 7)
+  longitude            Decimal?    @db.Decimal(10, 7)
+  pricePerNight        Int
+  weekendPricePerNight Int?
+  capacity             Int
+  bedrooms             Int
+  bathrooms            Int
+  sizeSqm              Int?
+  ratingAverage        Float       @default(0)
+  reviewCount          Int         @default(0)
+  status               VillaStatus @default(DRAFT)
+  isFeatured           Boolean     @default(false)
+  publishedAt          DateTime?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  category     Category            @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  images       VillaImage[]
+  amenities    VillaAmenity[]
+  availability VillaAvailability[]
+  rates        VillaRate[]
+  bookings     Booking[]
+
+  @@index([categoryId])
+  @@index([location])
+  @@index([pricePerNight])
+  @@index([capacity])
+  @@index([status, location])
+  @@index([status, capacity, pricePerNight])
+  @@index([isFeatured, status])
+  @@map("villas")
+}
+
+model VillaImage {
+  id        String   @id @default(cuid())
+  villaId   String
+  url       String   @db.Text
+  alt       String?
+  sortOrder Int      @default(0)
+  isCover   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  villa Villa @relation(fields: [villaId], references: [id], onDelete: Cascade)
+
+  @@index([villaId, sortOrder])
+  @@index([villaId, isCover])
+  @@map("villa_images")
+}
+
+model VillaAmenity {
+  villaId   String
+  amenityId String
+  createdAt DateTime @default(now())
+
+  villa   Villa   @relation(fields: [villaId], references: [id], onDelete: Cascade)
+  amenity Amenity @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([villaId, amenityId])
+  @@index([amenityId])
+  @@map("villa_amenities")
+}
+
+model VillaAvailability {
+  id            String             @id @default(cuid())
+  villaId       String
+  bookingId     String?
+  date          DateTime           @db.Date
+  status        AvailabilityStatus @default(AVAILABLE)
+  priceOverride Int?
+  minStayNights Int                @default(1)
+  note          String?            @db.VarChar(240)
+  holdExpiresAt DateTime?
+  bookedAt      DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  villa   Villa    @relation(fields: [villaId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@unique([villaId, date])
+  @@index([bookingId])
+  @@index([date, status])
+  @@index([villaId, status, date])
+  @@map("villa_availability")
+}
+
+model VillaRate {
+  id                   String   @id @default(cuid())
+  villaId              String
+  name                 String
+  startDate            DateTime @db.Date
+  endDate              DateTime @db.Date
+  pricePerNight        Int
+  weekendPricePerNight Int?
+  minStayNights        Int      @default(1)
+  priority             Int      @default(0)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  villa Villa @relation(fields: [villaId], references: [id], onDelete: Cascade)
+
+  @@index([villaId, isActive, startDate, endDate])
+  @@index([startDate, endDate])
+  @@map("villa_rates")
+}
+
+model Coupon {
+  id               String       @id @default(cuid())
+  code             String       @unique
+  name             String
+  description      String?      @db.Text
+  discountType     DiscountType
+  discountValue    Int
+  maxDiscount      Int?
+  minNights        Int?
+  minSubtotal      Int?
+  usageLimit       Int?
+  perCustomerLimit Int?
+  startsAt         DateTime?
+  endsAt           DateTime?
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  bookings    Booking[]
+  redemptions CouponRedemption[]
+
+  @@index([code, isActive])
+  @@index([startsAt, endsAt])
+  @@map("coupons")
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  bookingCode     String        @unique @db.VarChar(32)
+  villaId         String
+  couponId        String?
+  status          BookingStatus @default(DRAFT)
+  paymentStatus   PaymentStatus @default(UNPAID)
+  checkIn         DateTime      @db.Date
+  checkOut        DateTime      @db.Date
+  nights          Int
+  guests          Int
+  guestName       String        @db.VarChar(160)
+  guestEmail      String        @db.VarChar(190)
+  guestPhone      String        @db.VarChar(64)
+  specialRequest  String?       @db.Text
+  subtotal        Int
+  extraGuestFee   Int           @default(0)
+  addonTotal      Int           @default(0)
+  discountTotal   Int           @default(0)
+  serviceFee      Int           @default(0)
+  taxTotal        Int           @default(0)
+  totalAmount     Int
+  depositAmount   Int           @default(0)
+  remainingAmount Int           @default(0)
+  currency        String        @default("IDR") @db.VarChar(3)
+  source          String        @default("website") @db.VarChar(40)
+  expiresAt       DateTime?
+  confirmedAt     DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  villa             Villa                 @relation(fields: [villaId], references: [id], onDelete: Restrict)
+  coupon            Coupon?               @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  lineItems         BookingLineItem[]
+  couponRedemptions CouponRedemption[]
+  availabilityLocks VillaAvailability[]
+
+  @@index([villaId, checkIn, checkOut])
+  @@index([status, paymentStatus])
+  @@index([guestEmail])
+  @@index([createdAt])
+  @@map("bookings")
+}
+
+model BookingLineItem {
+  id          String              @id @default(cuid())
+  bookingId   String
+  type        BookingLineItemType
+  label       String
+  quantity    Int                 @default(1)
+  unitAmount  Int                 @default(0)
+  totalAmount Int
+  metadata    Json?
+  createdAt   DateTime            @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId, type])
+  @@map("booking_line_items")
+}
+
+model CouponRedemption {
+  id         String   @id @default(cuid())
+  couponId   String
+  bookingId  String
+  guestEmail String   @db.VarChar(190)
+  amount     Int
+  redeemedAt DateTime @default(now())
+
+  coupon  Coupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, bookingId])
+  @@index([couponId])
+  @@index([guestEmail])
+  @@map("coupon_redemptions")
+}
+
+model PaymentMethod {
+  id             String            @id @default(cuid())
+  code           String            @unique
+  name           String
+  type           PaymentMethodType
+  provider       PaymentProvider   @default(MOCK)
+  description    String?           @db.Text
+  instructions   String?           @db.Text
+  icon           String?
+  sortOrder      Int               @default(0)
+  fixedFee       Int               @default(0)
+  percentageFee  Decimal?          @db.Decimal(5, 2)
+  minAmount      Int?
+  maxAmount      Int?
+  isActive       Boolean           @default(true)
+  requiresProof  Boolean           @default(false)
+  config         Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([type, provider])
+  @@index([isActive, sortOrder])
+  @@map("payment_methods")
+}
