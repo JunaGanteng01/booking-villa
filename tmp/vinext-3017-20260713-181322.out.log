@@ -1,0 +1,12 @@
+
+> villaku-booking-frontend@0.1.0 dev
+> cross-env WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev -p 3017
+
+
+  vinext dev  (Vite 8.0.13)
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m3017[22m/[39m
+[2m6:13:40 PM[22m [36m[1m[vite][22m[39m [34m[2m(rsc)[22m[39m connected.
+[2m6:13:50 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m connected.
+ GET / 200 in 17.6s (compile: 9.2s, render: 8.4s)
+ GET /api/testimonials 500 in 4.1s

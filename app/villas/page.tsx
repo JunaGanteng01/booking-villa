@@ -189,13 +189,13 @@ const villas: Villa[] = [
     image:
       "https://images.unsplash.com/photo-1600607688969-a5bfcd646154?auto=format&fit=crop&w=1400&q=85",
     price: 3350000,
-    rating: 4.89,
-    reviews: 69,
+    rating: 0,
+    reviews: 0,
     guests: 4,
     bedrooms: 2,
     bathrooms: 2,
     size: "300m²",
-    badges: ["Sky lounge", "Plunge pool", "Romantic setup"],
+    badges: ["New listing", "Sky lounge", "Plunge pool"],
     amenities: ["Pool", "WiFi", "Lounge", "Breakfast"],
     available: true,
     highlight: "Villa compact elegan dengan lounge terbuka di atas tebing.",
@@ -747,8 +747,8 @@ function VillaCatalogCard({ villa }: { villa: Villa }) {
             </h3>
           </div>
           <div className="flex shrink-0 items-center gap-1 rounded-full bg-amber-200/70 px-3 py-2 text-sm font-bold text-emerald-950">
-            <Star className="size-4 fill-current" />
-            {villa.rating}
+            {villa.reviews > 0 ? <Star className="size-4 fill-current" /> : <Sparkles className="size-4" />}
+            {villa.reviews > 0 ? villa.rating : "Baru"}
           </div>
         </div>
 
@@ -775,7 +775,10 @@ function VillaCatalogCard({ villa }: { villa: Villa }) {
         <div className="mt-5 flex flex-wrap gap-2 text-xs text-emerald-950/52 dark:text-white/50">
           {villa.amenities.includes("WiFi") ? <Amenity icon={Wifi} label="WiFi" /> : null}
           {villa.amenities.includes("Pool") ? <Amenity icon={Waves} label="Pool" /> : null}
-          <Amenity icon={CalendarDays} label={`${villa.reviews} reviews`} />
+          <Amenity
+            icon={CalendarDays}
+            label={villa.reviews > 0 ? `${villa.reviews} reviews` : "Belum ada ulasan"}
+          />
         </div>
 
         <div className="mt-6 flex flex-col gap-4 border-t border-emerald-900/10 pt-5 dark:border-white/10 sm:flex-row sm:items-center sm:justify-between">

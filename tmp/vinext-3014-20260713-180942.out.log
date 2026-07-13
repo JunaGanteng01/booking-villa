@@ -1,0 +1,18 @@
+
+> villaku-booking-frontend@0.1.0 dev
+> cross-env WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev -p 3014
+
+
+  vinext dev  (Vite 8.0.13)
+
+[2m6:09:46 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing dependencies because vite config has changed
+[2m6:09:46 PM[22m [36m[1m[vite][22m[39m [34m[2m(ssr)[22m[39m Re-optimizing dependencies because vite config has changed
+[2m6:09:46 PM[22m [36m[1m[vite][22m[39m [34m[2m(rsc)[22m[39m Re-optimizing dependencies because vite config has changed
+[2m6:09:47 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [optimizer] scanning dependencies...
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m3014[22m/[39m
+[2m6:09:50 PM[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [optimizer] bundling dependencies...
+[2m6:10:13 PM[22m [36m[1m[vite][22m[39m [34m[2m(rsc)[22m[39m connected.
+ GET / 500 in 5.6s
+ GET /dashboard 500 in 3ms
+[2m6:10:30 PM[22m [36m[1m[vite][22m[39m [34m[2m(rsc)[22m[39m [32mhmr update [39m[2m/@id/__x00__virtual:vinext-rsc-entry, /app/globals.css[22m
+[2m6:14:33 PM[22m [36m[1m[vite][22m[39m [34m[2m(rsc)[22m[39m [32mhmr update [39m[2m/@id/__x00__virtual:vinext-rsc-entry, /app/globals.css[22m

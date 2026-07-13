@@ -26,10 +26,11 @@ import {
   UserRound,
   Users,
   WalletCards,
-  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { NotificationBell } from "@/components/notification-bell";
+import { useAppNotifications } from "@/components/notification-root";
 
 type DashboardSection = "overview" | "bookings" | "wishlist" | "profile";
 type BookingStatus = "upcoming" | "completed" | "cancelled";
@@ -189,12 +190,12 @@ const reveal = {
 
 export default function CustomerDashboardPage() {
   const shouldReduceMotion = useReducedMotion();
+  const { notify } = useAppNotifications();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
   const [bookingFilter, setBookingFilter] = useState<"all" | BookingStatus>("all");
   const [wishlist, setWishlist] = useState(initialWishlist);
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("villaku-theme");
@@ -204,12 +205,6 @@ export default function CustomerDashboardPage() {
     setTheme(nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
   }, []);
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 2600);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
 
   const visibleBookings = useMemo(
     () => bookings.filter((booking) => bookingFilter === "all" || booking.status === bookingFilter),
@@ -227,7 +222,11 @@ export default function CustomerDashboardPage() {
 
   const removeWishlist = (villa: WishlistVilla) => {
     setWishlist((items) => items.filter((item) => item.id !== villa.id));
-    setToast(`${villa.name} dihapus dari wishlist.`);
+    notify({
+      title: "Dihapus dari wishlist",
+      description: `${villa.name} tidak lagi ada di daftar favorit Anda.`,
+      variant: "success",
+    });
   };
 
   return (
@@ -270,19 +269,18 @@ export default function CustomerDashboardPage() {
               {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </button>
             <div className="relative">
-              <button
-                type="button"
-                className="relative grid size-10 place-items-center rounded-full border border-emerald-950/10 bg-white/62 transition-all hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/6 dark:hover:bg-white/10"
+              <NotificationBell
+                unreadCount={1}
                 onClick={() => setNotificationOpen((open) => !open)}
-                aria-label="Buka notifikasi"
-                aria-expanded={notificationOpen}
-              >
-                <Bell className="size-4" />
-                <span className="absolute right-2 top-2 size-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-[#071211]" />
-              </button>
+                expanded={notificationOpen}
+                controls="customer-notification-panel"
+              />
               <AnimatePresence>
                 {notificationOpen ? (
                   <motion.div
+                    id="customer-notification-panel"
+                    role="dialog"
+                    aria-label="Notifikasi pelanggan"
                     initial={{ opacity: 0, y: 8, scale: 0.97 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 8, scale: 0.97 }}
@@ -294,7 +292,7 @@ export default function CustomerDashboardPage() {
                         1 baru
                       </span>
                     </div>
-                    <div className="mt-4 rounded-2xl bg-emerald-950 p-4 text-white">
+                     <div className="mt-4 rounded-2xl bg-emerald-950 p-4 text-white">
                       <div className="flex gap-3">
                         <span className="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-400/18 text-emerald-200">
                           <Check className="size-4" />
@@ -305,9 +303,16 @@ export default function CustomerDashboardPage() {
                             Villa Aruna siap menyambut Anda pada 23 Agustus 2026.
                           </p>
                         </div>
-                      </div>
-                    </div>
-                  </motion.div>
+                       </div>
+                     </div>
+                     <Link
+                       href="/dashboard/notifications"
+                       onClick={() => setNotificationOpen(false)}
+                       className="mt-3 flex min-h-10 items-center justify-center gap-1 rounded-full text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-950/5 dark:text-emerald-300 dark:hover:bg-white/7"
+                     >
+                       Lihat semua notifikasi <ChevronRight className="size-3.5" />
+                     </Link>
+                   </motion.div>
                 ) : null}
               </AnimatePresence>
             </div>
@@ -367,7 +372,13 @@ export default function CustomerDashboardPage() {
             <div className="mt-3 border-t border-emerald-950/8 pt-3 dark:border-white/8">
               <button
                 type="button"
-                onClick={() => setToast("Pengaturan akun akan tersedia setelah autentikasi diaktifkan.")}
+                onClick={() =>
+                  notify({
+                    title: "Pengaturan akun",
+                    description: "Fitur ini akan tersedia setelah autentikasi diaktifkan.",
+                    variant: "info",
+                  })
+                }
                 className="flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold text-emerald-950/48 transition-colors hover:bg-emerald-950/5 hover:text-emerald-950 dark:text-white/46 dark:hover:bg-white/7 dark:hover:text-white"
               >
                 <Settings className="size-4" />
@@ -375,7 +386,13 @@ export default function CustomerDashboardPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setToast("Sesi tiruan tetap aktif untuk pratinjau dashboard.")}
+                onClick={() =>
+                  notify({
+                    title: "Mode pratinjau aktif",
+                    description: "Sesi tiruan tetap aktif untuk pratinjau dashboard.",
+                    variant: "info",
+                  })
+                }
                 className="flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold text-red-700/66 transition-colors hover:bg-red-500/8 hover:text-red-700 dark:text-red-300/64 dark:hover:bg-red-400/8 dark:hover:text-red-200"
               >
                 <LogOut className="size-4" />
@@ -421,7 +438,15 @@ export default function CustomerDashboardPage() {
               ) : null}
 
               {activeSection === "profile" ? (
-                <ProfileSection onSave={() => setToast("Perubahan profil tersimpan pada pratinjau ini.")} />
+                <ProfileSection
+                  onSave={() =>
+                    notify({
+                      title: "Profil berhasil diperbarui",
+                      description: "Perubahan tersimpan pada pratinjau ini.",
+                      variant: "success",
+                    })
+                  }
+                />
               ) : null}
             </motion.div>
           </AnimatePresence>
@@ -454,25 +479,6 @@ export default function CustomerDashboardPage() {
         })}
       </nav>
 
-      <AnimatePresence>
-        {toast ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 12, scale: 0.96 }}
-            className="fixed bottom-24 left-1/2 z-50 flex w-[min(92vw,28rem)] -translate-x-1/2 items-center gap-3 rounded-2xl bg-emerald-950 px-4 py-3 text-sm font-medium text-white shadow-2xl lg:bottom-6"
-            role="status"
-          >
-            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-400/18 text-emerald-200">
-              <Check className="size-4" />
-            </span>
-            <span className="flex-1">{toast}</span>
-            <button type="button" onClick={() => setToast(null)} aria-label="Tutup notifikasi">
-              <X className="size-4 text-white/52" />
-            </button>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
     </main>
   );
 }
@@ -797,12 +803,12 @@ function BookingCard({ booking }: { booking: Booking }) {
               </a>
             ) : null}
             {booking.status === "completed" ? (
-              <button
-                type="button"
+              <Link
+                href={`/reviews/new?booking=${booking.id}&villa=${booking.villaId}`}
                 className="inline-flex min-h-10 items-center gap-2 rounded-full border border-amber-400/20 bg-amber-300/10 px-4 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-300/16 dark:text-amber-200"
               >
                 <Star className="size-3.5" /> Tulis ulasan
-              </button>
+              </Link>
             ) : null}
           </div>
         </div>

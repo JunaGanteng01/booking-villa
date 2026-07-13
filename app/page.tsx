@@ -34,6 +34,7 @@ import {
   Sparkles,
   Star,
   Sun,
+  UserRound,
   Users,
   Utensils,
   Waves,
@@ -44,6 +45,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ComponentType } from "react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useAppNotifications } from "@/components/notification-root";
+import { RatingStars } from "@/components/rating-stars";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -165,21 +168,36 @@ const amenities: Array<{ label: string; icon: Icon }> = [
 const reviews = [
   {
     quote:
-      "Pengalaman booking terasa seperti concierge hotel bintang lima. Cepat, tenang, dan detailnya jelas.",
+      "Sejak memilih villa sampai kami pulang, semuanya terasa personal dan tenang. Tim Villaku bahkan menyiapkan makan malam ulang tahun ibu saya tanpa membuat prosesnya terasa rumit.",
     name: "Maya Putri",
-    role: "Family Trip, Jakarta",
+    role: "Family escape dari Jakarta",
+    villa: "Villa Aruna Cliffside",
+    stay: "4 malam · 8 tamu",
+    rating: 5,
+    image:
+      "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1400&q=85",
   },
   {
     quote:
-      "Visual villanya premium, form pencariannya enak dipakai, dan proses checkout terasa meyakinkan.",
+      "Villa sesuai dengan foto, check-in sangat mulus, dan concierge selalu hadir saat kami membutuhkannya.",
     name: "Raka Aditya",
-    role: "Founder Retreat",
+    role: "Founder retreat dari Bandung",
+    villa: "Nara Jungle Residence",
+    stay: "3 malam · 6 tamu",
+    rating: 5,
+    image:
+      "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=320&q=80",
   },
   {
     quote:
-      "Kami bisa membandingkan villa, kapasitas, dan fasilitas tanpa bolak-balik chat. Sangat efisien.",
+      "Kami menemukan tempat yang privat untuk honeymoon tanpa perlu bolak-balik chat. Detail harga dan fasilitasnya jelas sejak awal.",
     name: "Sofia Tan",
-    role: "Honeymoon Guest",
+    role: "Honeymoon guest dari Singapore",
+    villa: "Sagara Beach House",
+    stay: "5 malam · 2 tamu",
+    rating: 5,
+    image:
+      "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=320&q=80",
   },
 ];
 
@@ -215,11 +233,11 @@ export default function Home() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const heroRef = useRef<HTMLElement | null>(null);
   const router = useRouter();
+  const { notify } = useAppNotifications();
   const [activeSection, setActiveSection] = useState("home");
   const [isScrolled, setIsScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
-  const [toast, setToast] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [showLoader, setShowLoader] = useState(true);
   const shouldReduceMotion = useReducedMotion();
@@ -349,12 +367,6 @@ export default function Home() {
     return () => context.revert();
   }, [shouldReduceMotion]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(""), 3400);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
   const toggleTheme = () => {
     setTheme((current) => {
       const next = current === "dark" ? "light" : "dark";
@@ -383,7 +395,11 @@ export default function Home() {
       available: "true",
     });
 
-    setToast("Kriteria pencarian diterapkan. Membuka katalog villa terbaik.");
+    notify({
+      title: "Pencarian villa siap",
+      description: "Kriteria diterapkan. Membuka katalog villa terbaik untuk tanggal Anda.",
+      variant: "success",
+    });
     router.push(`/villas?${params.toString()}`);
   };
 
@@ -661,7 +677,11 @@ export default function Home() {
                   key={villa.name}
                   villa={villa}
                   onReserve={() =>
-                    setToast(`${villa.name} ditambahkan ke shortlist booking Anda.`)
+                    notify({
+                      title: "Ditambahkan ke shortlist",
+                      description: `${villa.name} tersimpan untuk rencana perjalanan Anda.`,
+                      variant: "success",
+                    })
                   }
                 />
               ))}
@@ -712,35 +732,142 @@ export default function Home() {
 
         <section id="reviews" className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8">
           <div aria-hidden className="testimonial-bg absolute inset-0" />
+          <motion.div
+            aria-hidden
+            className="absolute -right-24 top-24 size-72 rounded-full bg-amber-300/10 blur-3xl"
+            animate={shouldReduceMotion ? undefined : { y: [0, -28, 0], scale: [1, 1.08, 1] }}
+            transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
+          />
           <div className="container relative z-10 mx-auto max-w-7xl">
-            <div className="gsap-reveal mx-auto max-w-3xl text-center">
-              <SectionBadge icon={Quote}>Guest stories</SectionBadge>
-              <h2 className="mt-5 font-serif text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl">
-                Kepercayaan dibangun dari pengalaman yang jelas.
-              </h2>
+            <div className="gsap-reveal grid items-end gap-7 lg:grid-cols-[1fr_auto]">
+              <div className="max-w-3xl">
+                <SectionBadge icon={Quote}>Selected guest stories</SectionBadge>
+                <h2 className="mt-5 font-serif text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl">
+                  Momen yang tinggal lebih lama dari perjalanannya.
+                </h2>
+              </div>
+              <div className="flex items-center gap-4 rounded-2xl border border-white/12 bg-white/8 px-5 py-4 text-white shadow-xl backdrop-blur-xl">
+                <div className="flex size-11 items-center justify-center rounded-full bg-amber-300 text-emerald-950">
+                  <ShieldCheck className="size-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Ulasan terverifikasi</p>
+                  <p className="mt-0.5 text-xs text-white/55">Hanya dari tamu yang telah menginap</p>
+                </div>
+              </div>
             </div>
-            <div className="mt-12 grid gap-6 lg:grid-cols-3">
-              {reviews.map((review, index) => (
-                <motion.article
-                  key={review.name}
-                  className="card-lift rounded-[2rem] border border-white/12 bg-white/10 p-7 text-white shadow-2xl backdrop-blur-2xl"
-                  initial={shouldReduceMotion ? false : { opacity: 0, y: 32, scale: 0.96 }}
-                  whileInView={{ opacity: 1, y: 0, scale: 1 }}
-                  viewport={{ once: true, amount: 0.3 }}
-                  transition={{ delay: index * 0.09, duration: 0.65, ease: "easeOut" }}
-                >
-                  <div className="flex gap-1 text-amber-200">
-                    {Array.from({ length: 5 }).map((_, starIndex) => (
-                      <Star key={starIndex} className="size-4 fill-current" />
-                    ))}
+
+            <div className="mt-12 grid gap-6 lg:grid-cols-[1.18fr_0.82fr]">
+              <motion.article
+                className="group relative min-h-[34rem] overflow-hidden rounded-[2.25rem] border border-white/12 bg-emerald-950 text-white shadow-[0_36px_100px_rgba(0,0,0,0.3)]"
+                initial={shouldReduceMotion ? false : { opacity: 0, y: 36, scale: 0.97 }}
+                whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                viewport={{ once: true, amount: 0.22 }}
+                transition={{ duration: 0.75, ease: "easeOut" }}
+              >
+                <img
+                  src={reviews[0].image}
+                  alt={`Suasana menginap di ${reviews[0].villa}`}
+                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-1000 ease-out group-hover:scale-105"
+                  loading="lazy"
+                  decoding="async"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-emerald-950 via-emerald-950/62 to-emerald-950/8" />
+                <div className="absolute inset-x-0 bottom-0 p-7 sm:p-10">
+                  <div className="mb-7 flex items-center justify-between gap-4">
+                    <span className="rounded-full border border-white/18 bg-white/10 px-4 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] backdrop-blur-md">
+                      Cerita pilihan
+                    </span>
+                    <Quote className="size-10 text-amber-200/80" strokeWidth={1.4} />
                   </div>
-                  <p className="mt-6 text-lg leading-8 text-white/82">“{review.quote}”</p>
-                  <div className="mt-7 border-t border-white/12 pt-5">
-                    <p className="font-semibold">{review.name}</p>
-                    <p className="text-sm text-white/55">{review.role}</p>
+                  <blockquote className="max-w-3xl font-serif text-2xl font-medium leading-snug sm:text-3xl">
+                    “{reviews[0].quote}”
+                  </blockquote>
+                  <div className="mt-8 flex flex-col gap-5 border-t border-white/16 pt-6 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <p className="font-semibold">{reviews[0].name}</p>
+                      <p className="mt-1 text-sm text-white/58">{reviews[0].role}</p>
+                    </div>
+                    <div className="sm:text-right">
+                      <p className="text-sm font-semibold text-amber-100">{reviews[0].villa}</p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.15em] text-white/48">{reviews[0].stay}</p>
+                    </div>
                   </div>
-                </motion.article>
+                </div>
+              </motion.article>
+
+              <div className="grid gap-6">
+                {reviews.slice(1).map((review, index) => (
+                  <motion.article
+                    key={review.name}
+                    className="card-lift flex min-h-[16rem] flex-col rounded-[2rem] border border-white/12 bg-white/10 p-7 text-white shadow-2xl backdrop-blur-2xl"
+                    initial={shouldReduceMotion ? false : { opacity: 0, y: 32, scale: 0.96 }}
+                    whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                    viewport={{ once: true, amount: 0.3 }}
+                    transition={{ delay: (index + 1) * 0.09, duration: 0.65, ease: "easeOut" }}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <RatingStars
+                        value={review.rating}
+                        size="sm"
+                        label={`Rating dari ${review.name}`}
+                        filledClassName="text-amber-200"
+                        emptyClassName="text-white/18"
+                      />
+                      <ShieldCheck className="size-5 text-emerald-200/70" aria-label="Ulasan terverifikasi" />
+                    </div>
+                    <blockquote className="mt-5 flex-1 text-base leading-7 text-white/82">
+                      “{review.quote}”
+                    </blockquote>
+                    <div className="mt-6 flex items-center gap-3 border-t border-white/12 pt-5">
+                      <img
+                        src={review.image}
+                        alt=""
+                        className="size-11 rounded-full object-cover ring-2 ring-white/12"
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold">{review.name}</p>
+                        <p className="truncate text-sm text-white/55">{review.role}</p>
+                      </div>
+                      <div className="hidden text-right sm:block">
+                        <p className="max-w-40 truncate text-xs font-semibold text-amber-100">{review.villa}</p>
+                        <p className="mt-1 text-[0.65rem] uppercase tracking-[0.12em] text-white/42">{review.stay}</p>
+                      </div>
+                    </div>
+                  </motion.article>
+                ))}
+              </div>
+            </div>
+
+            <motion.div
+              className="mt-6 grid divide-y divide-white/10 overflow-hidden rounded-[1.75rem] border border-white/10 bg-emerald-950/28 text-white backdrop-blur-xl sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+              initial={shouldReduceMotion ? false : { opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.5 }}
+              transition={{ duration: 0.6, delay: 0.15 }}
+            >
+              {[
+                { value: "4.9/5", label: "Rata-rata kepuasan" },
+                { value: "1.240+", label: "Ulasan tamu terverifikasi" },
+                { value: "98%", label: "Tamu ingin kembali" },
+              ].map((metric) => (
+                <div key={metric.label} className="flex items-center justify-between gap-4 px-6 py-5 sm:block sm:text-center">
+                  <p className="font-serif text-2xl font-semibold text-amber-100">{metric.value}</p>
+                  <p className="text-xs uppercase tracking-[0.14em] text-white/48 sm:mt-1">{metric.label}</p>
+                </div>
               ))}
+            </motion.div>
+
+            <div className="mt-8 flex justify-center">
+              <Link
+                href="/villas"
+                className="group inline-flex items-center gap-2 text-sm font-semibold text-white/72 transition-colors hover:text-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+              >
+                Temukan villa dari cerita para tamu
+                <ArrowUpRight className="size-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+              </Link>
             </div>
           </div>
         </section>
@@ -830,7 +957,6 @@ export default function Home() {
       <Footer onScrollTo={scrollToSection} />
 
       <BackToTop visible={isScrolled} onClick={() => scrollToSection("home")} />
-      <Toast message={toast} />
       <TourDialog open={tourOpen} onOpenChange={setTourOpen} />
     </div>
   );
@@ -917,13 +1043,32 @@ function Navbar({
             {theme === "dark" ? <Sun /> : <Moon />}
           </Button>
           <Button
-            type="button"
-            variant="gold"
+            asChild
+            variant="ghost"
             size="sm"
-            className="hidden sm:inline-flex"
-            onClick={() => onScrollTo("home")}
+            className={cn(
+              "hidden lg:inline-flex",
+              !isScrolled && "text-white hover:bg-white/12 hover:text-white",
+            )}
           >
-            Book now
+            <Link href="/login">
+              <UserRound />
+              <span className="hidden xl:inline">Login User</span>
+            </Link>
+          </Button>
+          <Button
+            asChild
+            variant={isScrolled ? "outline" : "ghost"}
+            size="sm"
+            className={cn(
+              "hidden lg:inline-flex",
+              !isScrolled && "border border-white/18 bg-white/10 text-white hover:bg-white/18 hover:text-white",
+            )}
+          >
+            <Link href="/login?mode=admin&callbackUrl=/admin/villas">
+              <ShieldCheck />
+              <span className="hidden 2xl:inline">Login Admin</span>
+            </Link>
           </Button>
           <Button
             type="button"
@@ -1019,6 +1164,19 @@ function MobileDrawer({
               {theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
               {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </button>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/login">
+                  <UserRound /> Login User
+                </Link>
+              </Button>
+              <Button asChild variant="default" className="w-full">
+                <Link href="/login?mode=admin&callbackUrl=/admin/villas">
+                  <ShieldCheck /> Login Admin
+                </Link>
+              </Button>
+            </div>
 
             <div className="mt-6 rounded-[1.5rem] bg-emerald-950 p-5 text-white">
               <p className="font-serif text-2xl">Book a private escape</p>
@@ -1328,29 +1486,6 @@ function LuxuryLoader({ show }: { show: boolean }) {
             <span className="absolute size-20 rounded-full border border-emerald-700/30" />
             <span className="font-serif text-3xl font-semibold">Villaku</span>
           </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
-  );
-}
-
-function Toast({ message }: { message: string }) {
-  return (
-    <AnimatePresence>
-      {message ? (
-        <motion.div
-          className="fixed bottom-6 left-1/2 z-[90] w-[min(92vw,520px)] -translate-x-1/2 rounded-2xl border border-emerald-900/10 bg-white/90 p-4 text-emerald-950 shadow-[0_24px_80px_rgba(4,34,28,0.22)] backdrop-blur-2xl dark:border-white/10 dark:bg-emerald-950/88 dark:text-white"
-          initial={{ opacity: 0, y: 26, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 20, scale: 0.96 }}
-          role="status"
-        >
-          <div className="flex items-start gap-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-emerald-700 text-white">
-              <CheckCircle2 className="size-5" />
-            </span>
-            <p className="text-sm leading-6">{message}</p>
-          </div>
         </motion.div>
       ) : null}
     </AnimatePresence>

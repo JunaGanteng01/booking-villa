@@ -1,0 +1,22 @@
+(node:18484) ExperimentalWarning: glob is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Get testimonials error: PrismaClientInitializationError: 
+Invalid `prisma.review.findMany()` invocation:
+
+
+Can't reach database server at `localhost:5432`
+
+Please make sure your database server is running at `localhost:5432`.
+    at ei.handleRequestError (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:6814:30)
+    at ei.handleAndLogRequestError (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:6767:9)
+    at ei.request (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:6750:9)
+    at async a (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:7375:13)
+    at async Object.GET [as handlerFn] (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:10:24)
+    at async runAppRouteHandler (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:41:19)
+    at async executeAppRouteHandler (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:50:46)
+    at async route (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:315:16)
+    at async file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/@vitejs/plugin-rsc/dist/plugin-BhzHKRFo.js:786:8 {
+  clientVersion: '6.19.3',
+  errorCode: undefined,
+  retryable: undefined
+}

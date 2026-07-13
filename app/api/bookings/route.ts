@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { getStayDates } from "@/lib/booking-availability";
 import { calculateBookingPricing, type PricingInput } from "@/lib/booking-pricing";
 import { createBookingRecord } from "@/lib/booking-store";
@@ -179,3 +180,45 @@ function validateGuest({
 
   return { ok: true as const };
 }
+
+export async function GET(req: Request) {
+  try {
+    const userId = req.headers.get("x-user-id");
+    
+    if (!userId) {
+      return NextResponse.json(
+        { message: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+    
+    const bookings = await prisma.booking.findMany({
+      where: { userId },
+      include: {
+        villa: {
+          select: {
+            id: true,
+            name: true,
+            location: true,
+            images: {
+              where: { isCover: true },
+              take: 1,
+            },
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+    
+    return NextResponse.json({ bookings }, { status: 200 });
+  } catch (error) {
+    console.error("Get bookings error:", error);
+    return NextResponse.json(
+      { message: "Terjadi kesalahan pada server" },
+      { status: 500 }
+    );
+  }
+}
+

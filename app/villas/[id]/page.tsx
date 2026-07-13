@@ -3,6 +3,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ArrowLeft,
+  ArrowRight,
   Bath,
   BedDouble,
   CalendarDays,
@@ -16,9 +17,11 @@ import {
   MapPin,
   Phone,
   Plus,
+  Quote,
   ShieldCheck,
   Sparkles,
   Star,
+  ThumbsUp,
   UserRound,
   Users,
   Waves,
@@ -28,6 +31,7 @@ import {
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
+import { RatingStars } from "@/components/rating-stars";
 import { Button } from "@/components/ui/button";
 import { bookingDraftStorageKey } from "@/lib/booking-draft";
 import { cn } from "@/lib/utils";
@@ -78,6 +82,63 @@ const facilityDetails = [
   { label: "High-speed WiFi", icon: Wifi },
   { label: "Verified stay", icon: ShieldCheck },
   { label: "Daily concierge", icon: Sparkles },
+];
+
+const ratingCategories = [
+  { label: "Kebersihan", score: 4.9 },
+  { label: "Kenyamanan", score: 4.8 },
+  { label: "Lokasi", score: 4.9 },
+  { label: "Layanan", score: 5.0 },
+];
+
+const ratingDistribution = [
+  { stars: 5, percent: 86 },
+  { stars: 4, percent: 11 },
+  { stars: 3, percent: 2 },
+  { stars: 2, percent: 1 },
+  { stars: 1, percent: 0 },
+];
+
+const guestReviews = [
+  {
+    id: "review-maya",
+    initials: "MP",
+    name: "Maya Putri",
+    origin: "Jakarta",
+    rating: 5,
+    date: "Februari 2026",
+    stay: "3 malam · Family trip",
+    comment:
+      "Suasananya jauh lebih tenang dari foto. Tim villa sangat responsif sejak check-in, kamar bersih, dan sarapan di teras menghadap pepohonan menjadi momen favorit keluarga kami.",
+    tags: ["Kebersihan", "Layanan"],
+    helpful: 24,
+  },
+  {
+    id: "review-raka",
+    initials: "RA",
+    name: "Raka Aditya",
+    origin: "Bandung",
+    rating: 5,
+    date: "Januari 2026",
+    stay: "4 malam · Couple escape",
+    comment:
+      "Privasi sangat terjaga dan area pool terasa eksklusif. Lokasinya mudah dijangkau tetapi tetap sunyi. Concierge membantu mengatur dinner dan transport tanpa proses yang rumit.",
+    tags: ["Kenyamanan", "Lokasi"],
+    helpful: 18,
+  },
+  {
+    id: "review-sofia",
+    initials: "ST",
+    name: "Sofia Tan",
+    origin: "Singapore",
+    rating: 4,
+    date: "Desember 2025",
+    stay: "2 malam · Wellness stay",
+    comment:
+      "Villa indah dengan forest view yang menenangkan. Spa room dan yoga deck sangat menyenangkan. WiFi sempat melambat saat hujan, tetapi tim menangani dengan cepat.",
+    tags: ["Suasana", "Respons tim"],
+    helpful: 11,
+  },
 ];
 
 const bookingAddOns = [
@@ -147,6 +208,8 @@ export default function VillaDetailPage() {
   const rawId = params?.id;
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const villa = id ? getVillaById(id) : undefined;
+  const visibleGuestReviews = villa?.reviews === 0 ? [] : guestReviews;
+  const hasGuestReviews = visibleGuestReviews.length > 0;
   const shouldReduceMotion = useReducedMotion();
   const [selectedImage, setSelectedImage] = useState(0);
   const [checkIn, setCheckIn] = useState("2026-08-16");
@@ -489,8 +552,8 @@ export default function VillaDetailPage() {
                   {villa.address}
                 </span>
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-200/70 px-3 py-1.5 font-semibold text-emerald-950">
-                  <Star className="size-4 fill-current" />
-                  {villa.rating} ({villa.reviews} ulasan)
+                  {hasGuestReviews ? <Star className="size-4 fill-current" /> : <Sparkles className="size-4" />}
+                  {hasGuestReviews ? `${villa.rating} (${villa.reviews} ulasan)` : "Villa baru · Belum ada ulasan"}
                 </span>
               </p>
             </div>
@@ -583,6 +646,288 @@ export default function VillaDetailPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </article>
+
+            <article
+              id="rating-summary"
+              aria-hidden={!hasGuestReviews}
+              className={cn(
+                "overflow-hidden rounded-[2rem] border border-emerald-900/10 bg-white/74 shadow-sm backdrop-blur-2xl dark:border-white/10 dark:bg-white/5",
+                !hasGuestReviews && "hidden",
+              )}
+            >
+              <div className="grid lg:grid-cols-[0.82fr_1.18fr]">
+                <div className="relative overflow-hidden bg-emerald-950 p-6 text-white sm:p-8">
+                  <div
+                    aria-hidden
+                    className="absolute inset-0 bg-[radial-gradient(circle_at_18%_14%,rgba(16,185,129,0.2),transparent_17rem),radial-gradient(circle_at_84%_88%,rgba(247,217,140,0.16),transparent_15rem)]"
+                  />
+                  <div className="relative">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="inline-flex items-center gap-2 rounded-full bg-emerald-300/12 px-3 py-1.5 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-emerald-200 ring-1 ring-emerald-200/12">
+                        <ShieldCheck className="size-3.5" /> Verified stays
+                      </span>
+                      <span className="text-xs text-white/42">{villa.reviews} ulasan</span>
+                    </div>
+                    <p className="mt-8 font-serif text-7xl font-semibold leading-none tracking-[-0.06em]">
+                      {villa.rating}
+                    </p>
+                    <RatingStars
+                      value={villa.rating}
+                      size="md"
+                      label={`Rating ${villa.name}`}
+                      className="mt-4"
+                      filledClassName="text-amber-300"
+                      emptyClassName="text-white/16"
+                    />
+                    <p className="mt-4 max-w-xs text-sm leading-6 text-white/54">
+                      Tamu menilai stay ini istimewa untuk suasana, pelayanan, dan kenyamanan.
+                    </p>
+
+                    <div className="mt-7 space-y-2.5">
+                      {ratingDistribution.map((item) => (
+                        <div key={item.stars} className="grid grid-cols-[1.25rem_1fr_2.25rem] items-center gap-2 text-xs">
+                          <span className="font-semibold text-white/58">{item.stars}</span>
+                          <span className="h-1.5 overflow-hidden rounded-full bg-white/9">
+                            <motion.span
+                              className="block h-full rounded-full bg-gradient-to-r from-amber-300 to-amber-200"
+                              initial={shouldReduceMotion ? false : { scaleX: 0 }}
+                              whileInView={{ scaleX: item.percent / 100 }}
+                              viewport={{ once: true, amount: 0.6 }}
+                              transition={{ duration: 0.75, ease: "easeOut" }}
+                              style={{ transformOrigin: "left" }}
+                            />
+                          </span>
+                          <span className="text-right text-white/38">{item.percent}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 sm:p-8">
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                    Ringkasan rating
+                  </p>
+                  <h2 className="mt-2 font-serif text-4xl font-semibold tracking-[-0.04em] text-emerald-950 dark:text-white">
+                    Dicintai untuk setiap detail.
+                  </h2>
+                  <p className="mt-3 text-sm leading-6 text-emerald-950/52 dark:text-white/50">
+                    Nilai kategori dirangkum dari pengalaman tamu yang telah menyelesaikan booking.
+                  </p>
+
+                  <div className="mt-7 grid gap-3 sm:grid-cols-2">
+                    {ratingCategories.map((category, index) => (
+                      <motion.div
+                        key={category.label}
+                        initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true, amount: 0.5 }}
+                        transition={{ delay: index * 0.06, duration: 0.38 }}
+                        className="rounded-[1.25rem] border border-emerald-950/8 bg-white/52 p-4 dark:border-white/8 dark:bg-white/5"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-sm font-semibold">{category.label}</span>
+                          <span className="font-serif text-2xl font-semibold text-emerald-800 dark:text-emerald-200">
+                            {category.score.toFixed(1)}
+                          </span>
+                        </div>
+                        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-emerald-950/7 dark:bg-white/8">
+                          <motion.div
+                            className="h-full rounded-full bg-emerald-600"
+                            initial={shouldReduceMotion ? false : { scaleX: 0 }}
+                            whileInView={{ scaleX: category.score / 5 }}
+                            viewport={{ once: true, amount: 0.7 }}
+                            transition={{ duration: 0.65, ease: "easeOut" }}
+                            style={{ transformOrigin: "left" }}
+                          />
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-emerald-950/8 pt-5 dark:border-white/8">
+                    <div className="flex -space-x-2" aria-label="Tamu yang memberikan ulasan">
+                      {["MP", "RA", "ST"].map((initials, index) => (
+                        <span
+                          key={initials}
+                          className={cn(
+                            "grid size-9 place-items-center rounded-full border-2 border-[#fffaf2] text-[0.62rem] font-bold text-white dark:border-[#0b1f1b]",
+                            index === 0 ? "bg-emerald-700" : index === 1 ? "bg-amber-600" : "bg-emerald-950",
+                          )}
+                        >
+                          {initials}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                      <CheckCircle2 className="size-4" /> 96% merekomendasikan villa ini
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article
+              id="guest-reviews"
+              className="rounded-[2rem] border border-emerald-900/10 bg-white/74 p-6 shadow-sm backdrop-blur-2xl dark:border-white/10 dark:bg-white/5 sm:p-8"
+            >
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                    Cerita tamu
+                  </p>
+                  <h2 className="mt-2 font-serif text-4xl font-semibold tracking-[-0.04em] text-emerald-950 dark:text-white">
+                    {hasGuestReviews ? "Ulasan dari stay terverifikasi." : "Jadilah tamu pertama yang bercerita."}
+                  </h2>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-emerald-950/52 dark:text-white/50">
+                    {hasGuestReviews
+                      ? "Pengalaman nyata dari tamu yang telah menyelesaikan masa menginap di villa ini."
+                      : "Villa ini baru bergabung di Villaku dan belum menerima ulasan dari tamu terverifikasi."}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 rounded-full border border-emerald-950/8 bg-white/54 px-4 py-2.5 text-sm dark:border-white/8 dark:bg-white/5">
+                  {hasGuestReviews ? (
+                    <>
+                      <Star className="size-4 fill-amber-400 text-amber-400" />
+                      <span className="font-bold">{villa.rating}</span>
+                      <span className="text-emerald-950/38 dark:text-white/36">· {villa.reviews} ulasan</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="size-4 text-amber-500" />
+                      <span className="font-semibold">Belum ada ulasan</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {hasGuestReviews ? (
+                <div className="mt-7 grid gap-4">
+                  {visibleGuestReviews.map((review, index) => (
+                  <motion.article
+                    key={review.id}
+                    initial={shouldReduceMotion ? false : { opacity: 0, y: 18, filter: "blur(8px)" }}
+                    whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                    viewport={{ once: true, amount: 0.3 }}
+                    transition={{ delay: index * 0.07, duration: 0.42, ease: "easeOut" }}
+                    className="group rounded-[1.55rem] border border-emerald-950/8 bg-white/52 p-5 transition-[border-color,background-color,transform] hover:-translate-y-0.5 hover:border-emerald-600/18 hover:bg-white/78 dark:border-white/8 dark:bg-white/4 dark:hover:border-emerald-300/16 dark:hover:bg-white/7 sm:p-6"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={cn(
+                            "grid size-11 shrink-0 place-items-center rounded-full text-xs font-bold text-white ring-2 ring-amber-300/42",
+                            index === 0 ? "bg-emerald-700" : index === 1 ? "bg-amber-700" : "bg-emerald-950",
+                          )}
+                        >
+                          {review.initials}
+                        </span>
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold">{review.name}</p>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600/8 px-2 py-1 text-[0.58rem] font-bold uppercase tracking-[0.1em] text-emerald-700 dark:bg-emerald-300/8 dark:text-emerald-300">
+                              <ShieldCheck className="size-3" /> Verified
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-emerald-950/40 dark:text-white/38">
+                            {review.origin} · {review.stay}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-left sm:text-right">
+                        <RatingStars
+                          value={review.rating}
+                          size="sm"
+                          label={`Rating dari ${review.name}`}
+                        />
+                        <p className="mt-1 text-[0.65rem] text-emerald-950/34 dark:text-white/32">{review.date}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex gap-3">
+                      <Quote className="mt-0.5 size-5 shrink-0 text-amber-600/66 dark:text-amber-300/64" />
+                      <p className="text-sm leading-7 text-emerald-950/62 dark:text-white/60">{review.comment}</p>
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-emerald-950/7 pt-4 dark:border-white/7">
+                      <div className="flex flex-wrap gap-2">
+                        {review.tags.map((tag) => (
+                          <span key={tag} className="rounded-full bg-emerald-950/[0.045] px-3 py-1.5 text-[0.62rem] font-semibold text-emerald-950/54 dark:bg-white/6 dark:text-white/52">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => showToast("Terima kasih. Ulasan ditandai membantu.", 2200)}
+                        className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold text-emerald-950/46 transition-colors hover:bg-emerald-950/5 hover:text-emerald-700 dark:text-white/44 dark:hover:bg-white/7 dark:hover:text-emerald-300"
+                      >
+                        <ThumbsUp className="size-3.5" /> Membantu ({review.helpful})
+                      </button>
+                    </div>
+                  </motion.article>
+                  ))}
+                </div>
+              ) : (
+                <motion.div
+                  initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.98 }}
+                  whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                  viewport={{ once: true, amount: 0.45 }}
+                  transition={{ duration: 0.48, ease: "easeOut" }}
+                  role="status"
+                  className="relative mt-7 overflow-hidden rounded-[1.75rem] border border-dashed border-emerald-950/14 bg-gradient-to-br from-emerald-50/82 via-white/72 to-amber-50/78 px-6 py-12 text-center dark:border-white/14 dark:from-emerald-950/34 dark:via-white/[0.035] dark:to-amber-300/[0.045] sm:px-10"
+                >
+                  <div
+                    aria-hidden
+                    className="absolute left-1/2 top-0 h-36 w-72 -translate-x-1/2 rounded-full bg-amber-300/16 blur-3xl"
+                  />
+                  <div className="relative">
+                    <div className="mx-auto grid size-16 place-items-center rounded-full border border-amber-300/36 bg-amber-100/72 text-emerald-900 shadow-[0_16px_40px_rgba(180,132,36,0.12)] dark:bg-amber-300/12 dark:text-amber-200">
+                      <Quote className="size-7" strokeWidth={1.7} />
+                    </div>
+                    <span className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-600/8 px-3 py-1.5 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:bg-emerald-300/8 dark:text-emerald-300">
+                      <Sparkles className="size-3.5" /> New villa story
+                    </span>
+                    <h3 className="mx-auto mt-4 max-w-xl font-serif text-3xl font-semibold tracking-[-0.035em] text-emerald-950 dark:text-white sm:text-4xl">
+                      Belum ada ulasan untuk villa ini.
+                    </h3>
+                    <p className="mx-auto mt-3 max-w-lg text-sm leading-7 text-emerald-950/52 dark:text-white/48">
+                      Selesaikan masa menginap Anda dan bagikan pengalaman pertama. Ulasan hanya dapat dibuat dari booking yang terverifikasi.
+                    </p>
+                    <div className="mt-6 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                      <Button
+                        type="button"
+                        onClick={() => showToast("Pilih tanggal menginap untuk memulai booking.", 2400)}
+                        className="rounded-full bg-emerald-800 px-6 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+                      >
+                        Pesan villa ini <ArrowRight className="size-4" />
+                      </Button>
+                      <span className="inline-flex items-center gap-2 text-xs font-medium text-emerald-950/42 dark:text-white/40">
+                        <ShieldCheck className="size-4 text-emerald-600 dark:text-emerald-300" /> Ulasan terlindungi dan terverifikasi
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              <div
+                className={cn(
+                  "mt-6 flex flex-col items-center justify-between gap-3 rounded-[1.35rem] border border-dashed border-emerald-950/12 bg-emerald-950/[0.025] p-4 text-center dark:border-white/12 dark:bg-white/[0.025] sm:flex-row sm:text-left",
+                  !hasGuestReviews && "hidden",
+                )}
+              >
+                <p className="text-sm text-emerald-950/50 dark:text-white/48">
+                  Menampilkan 3 ulasan terbaru dari total {villa.reviews} ulasan.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => showToast("Daftar ulasan lengkap akan tersedia setelah backend aktif.", 2600)}
+                  className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-900 dark:text-emerald-300 dark:hover:text-emerald-200"
+                >
+                  Lihat semua ulasan <ArrowRight className="size-4" />
+                </button>
               </div>
             </article>
 

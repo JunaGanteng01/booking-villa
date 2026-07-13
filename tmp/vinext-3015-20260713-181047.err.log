@@ -1,0 +1,12 @@
+(node:24204) ExperimentalWarning: glob is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[2m6:11:11 PM[22m [31m[1m[vite][22m[39m [31mInternal server error: module is not defined[39m
+      at eval (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:29:1)
+      at ESModulesEvaluator.runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:161)
+      at ModuleRunner.directRequest (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1254:80)
+      at async ModuleRunner.cachedRequest (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1161:73)
+[2m6:11:11 PM[22m [31m[1m[vite][22m[39m [31mInternal server error: module is not defined[39m
+      at eval (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:29:1)
+      at ESModulesEvaluator.runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:161)
+      at ModuleRunner.directRequest (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1254:80)
+      at async ModuleRunner.cachedRequest (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1161:73)
