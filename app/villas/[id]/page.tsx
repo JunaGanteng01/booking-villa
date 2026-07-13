@@ -372,7 +372,7 @@ export default function VillaDetailPage() {
         id: villa.id,
         name: villa.name,
         location: villa.location,
-        area: villa.area,
+        area: villa.size,
         image: villa.image,
         price: villa.price,
       },
