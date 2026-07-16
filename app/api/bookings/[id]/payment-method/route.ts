@@ -4,6 +4,7 @@ import {
   getPaymentMethodById,
   savePaymentMethodForBooking,
 } from "@/lib/payment-store";
+import { triggerPaymentMethodSelected } from "@/lib/notification-triggers";
 
 type SavePaymentMethodInput = {
   methodId?: string | null;
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
   }
 
   const payment = savePaymentMethodForBooking(booking, method);
+  void triggerPaymentMethodSelected(booking, method.title);
 
   return NextResponse.json({
     data: {

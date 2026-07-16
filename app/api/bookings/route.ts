@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getStayDates } from "@/lib/booking-availability";
+import { triggerBookingInvoiceEmail } from "@/lib/booking-email-triggers";
 import { calculateBookingPricing, type PricingInput } from "@/lib/booking-pricing";
 import { createBookingRecord } from "@/lib/booking-store";
+import { triggerBookingCreated } from "@/lib/notification-triggers";
 import { getVillaById } from "@/lib/villa-data";
 
 type CreateBookingInput = PricingInput & {
@@ -133,6 +135,9 @@ export async function POST(request: Request) {
     expiresAt,
   });
 
+  void triggerBookingCreated(booking);
+  void triggerBookingInvoiceEmail(booking);
+
   return NextResponse.json(
     {
       data: {
@@ -221,4 +226,3 @@ export async function GET(req: Request) {
     );
   }
 }
-

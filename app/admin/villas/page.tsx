@@ -37,6 +37,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { NotificationBell } from "@/components/notification-bell";
 import { useAppNotifications } from "@/components/notification-root";
+import { listAdminVillas, updateAdminVilla, type AdminVillaDto } from "@/lib/admin-api-client";
 import { cn } from "@/lib/utils";
 
 type VillaStatus = "PUBLISHED" | "DRAFT" | "MAINTENANCE" | "ARCHIVED";
@@ -248,12 +249,34 @@ const money = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
+function toAdminVilla(villa: AdminVillaDto): AdminVilla {
+  const cover = villa.images.find((image) => image.isCover) ?? villa.images[0];
+  return {
+    id: villa.id,
+    name: villa.name,
+    location: villa.location,
+    category: villa.category,
+    image: cover?.url ?? "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=82",
+    price: villa.pricePerNight,
+    capacity: villa.capacity,
+    bedrooms: villa.bedrooms,
+    rating: 0,
+    reviews: 0,
+    status: villa.status,
+    occupancy: 0,
+    bookings: 0,
+    nextAvailable: villa.status === "PUBLISHED" ? "Tersedia" : statusMeta[villa.status].label,
+    featured: villa.isFeatured,
+  };
+}
+
 export default function AdminVillaListPage() {
   const shouldReduceMotion = useReducedMotion();
   const { notify } = useAppNotifications();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [villas, setVillas] = useState(initialVillas);
+  const [villas, setVillas] = useState<AdminVilla[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"ALL" | VillaStatus>("ALL");
   const [location, setLocation] = useState("ALL");
@@ -270,6 +293,29 @@ export default function AdminVillaListPage() {
       savedTheme === "dark" || (!savedTheme && prefersDark) ? "dark" : "light";
     setTheme(nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    listAdminVillas({ limit: 100 })
+      .then(({ villas: items }) => {
+        if (active) setVillas(items.map(toAdminVilla));
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        notify({
+          title: "Daftar villa gagal dimuat",
+          description: error instanceof Error ? error.message : "Coba muat ulang halaman.",
+          variant: "error",
+        });
+      })
+      .finally(() => active && setIsLoading(false));
+    return () => {
+      active = false;
+    };
+  // `notify` is provided by the notification context and is intentionally omitted
+  // so this data request runs once per page mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const locations = useMemo(
@@ -320,18 +366,29 @@ export default function AdminVillaListPage() {
     });
   };
 
-  const updateStatus = (villa: AdminVilla, nextStatus: VillaStatus) => {
+  const updateStatus = async (villa: AdminVilla, nextStatus: VillaStatus) => {
+    const previousStatus = villa.status;
     setVillas((items) =>
       items.map((item) =>
         item.id === villa.id ? { ...item, status: nextStatus } : item,
       ),
     );
     setOpenMenu(null);
-    notify({
-      title: `${villa.name} diperbarui`,
-      description: `Status diubah menjadi ${statusMeta[nextStatus].label}.`,
-      variant: "success",
-    });
+    try {
+      await updateAdminVilla(villa.id, { status: nextStatus });
+      notify({
+        title: `${villa.name} diperbarui`,
+        description: `Status diubah menjadi ${statusMeta[nextStatus].label}.`,
+        variant: "success",
+      });
+    } catch (error) {
+      setVillas((items) => items.map((item) => item.id === villa.id ? { ...item, status: previousStatus } : item));
+      notify({
+        title: "Status gagal diperbarui",
+        description: error instanceof Error ? error.message : "Silakan coba lagi.",
+        variant: "error",
+      });
+    }
   };
 
   const resetFilters = () => {
@@ -556,7 +613,11 @@ export default function AdminVillaListPage() {
             </div>
 
             <AnimatePresence mode="wait">
-              {visibleVillas.length ? (
+              {isLoading ? (
+                <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid min-h-80 place-items-center border-t border-emerald-950/8 dark:border-white/8">
+                  <div className="text-center"><span className="mx-auto block size-9 animate-spin rounded-full border-2 border-emerald-700/20 border-t-emerald-700" /><p className="mt-3 text-sm text-emerald-950/46 dark:text-white/44">Memuat portofolio villa...</p></div>
+                </motion.div>
+              ) : visibleVillas.length ? (
                 view === "table" ? (
                   <motion.div
                     key="table"
@@ -586,7 +647,7 @@ export default function AdminVillaListPage() {
                                 current === villa.id ? null : villa.id,
                               )
                             }
-                            onStatus={(next) => updateStatus(villa, next)}
+                            onStatus={(next) => void updateStatus(villa, next)}
                             delay={shouldReduceMotion ? 0 : index * 0.035}
                           />
                         ))}
@@ -604,7 +665,7 @@ export default function AdminVillaListPage() {
                       <VillaAdminCard
                         key={villa.id}
                         villa={villa}
-                        onStatus={(next) => updateStatus(villa, next)}
+                        onStatus={(next) => void updateStatus(villa, next)}
                         delay={shouldReduceMotion ? 0 : index * 0.05}
                       />
                     ))}

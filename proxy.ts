@@ -35,6 +35,7 @@ export async function proxy(request: NextRequest) {
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set("x-user-id", String(payload.id ?? ""));
     requestHeaders.set("x-user-role", String(payload.role ?? ""));
+    requestHeaders.set("x-user-email", String(payload.email ?? ""));
 
     return NextResponse.next({
       request: {
@@ -58,5 +59,6 @@ export const config = {
     "/admin/:path*",
     "/api/user/:path*",
     "/api/admin/:path*",
+    "/api/notifications/:path*",
   ],
 };

@@ -72,27 +72,68 @@ enum PaymentProvider {
   MOCK
 }
 
+enum NotificationCategory {
+  BOOKING
+  PAYMENT
+  REVIEW
+  STAY
+  REWARD
+  GUEST
+  SECURITY
+  SYSTEM
+  PROMOTION
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
 model Category {
   id          String   @id @default(cuid())
   name        String   @unique
   slug        String   @unique
   description String?  @db.Text
+  imageUrl    String?  @db.Text
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
   villas      Villa[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@index([isActive, sortOrder])
   @@map("categories")
 }
 
 model Amenity {
-  id        String         @id @default(cuid())
-  name      String         @unique
-  slug      String         @unique
-  icon      String?
-  villas    VillaAmenity[]
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id          String         @id @default(cuid())
+  name        String         @unique
+  slug        String         @unique
+  description String?        @db.Text
+  group       String?        @db.VarChar(80)
+  icon        String?
+  sortOrder   Int            @default(0)
+  isActive    Boolean        @default(true)
+  villas      VillaAmenity[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
+  @@index([group, isActive, sortOrder])
   @@map("amenities")
 }
 
@@ -132,6 +173,7 @@ model Villa {
   bookings     Booking[]
   wishlists    Wishlist[]
   reviews      Review[]
+  promotions   VillaPromotion[]
 
   @@index([categoryId])
   @@index([location])
@@ -144,13 +186,18 @@ model Villa {
 }
 
 model VillaImage {
-  id        String   @id @default(cuid())
-  villaId   String
-  url       String   @db.Text
-  alt       String?
-  sortOrder Int      @default(0)
-  isCover   Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  villaId      String
+  url          String   @db.Text
+  cloudinaryId String?  @unique
+  alt          String?
+  width        Int?
+  height       Int?
+  blurDataUrl  String?  @db.Text
+  sortOrder    Int      @default(0)
+  isCover      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   villa Villa @relation(fields: [villaId], references: [id], onDelete: Cascade)
 
@@ -243,6 +290,44 @@ model Coupon {
   @@map("coupons")
 }
 
+model Promotion {
+  id            String           @id @default(cuid())
+  code          String           @unique @db.VarChar(40)
+  name          String
+  description   String?          @db.Text
+  discountType  DiscountType
+  discountValue Int
+  maxDiscount   Int?
+  minNights     Int?
+  minSubtotal   Int?
+  usageLimit    Int?
+  usageCount    Int              @default(0)
+  startsAt      DateTime
+  endsAt        DateTime
+  isActive      Boolean          @default(false)
+  appliesToAll  Boolean          @default(true)
+  villas        VillaPromotion[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([isActive, startsAt, endsAt])
+  @@index([code, isActive])
+  @@map("promotions")
+}
+
+model VillaPromotion {
+  villaId     String
+  promotionId String
+  createdAt   DateTime @default(now())
+
+  villa     Villa     @relation(fields: [villaId], references: [id], onDelete: Cascade)
+  promotion Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@id([villaId, promotionId])
+  @@index([promotionId])
+  @@map("villa_promotions")
+}
+
 model Booking {
   id              String        @id @default(cuid())
   bookingCode     String        @unique @db.VarChar(32)
@@ -282,6 +367,7 @@ model Booking {
   lineItems         BookingLineItem[]
   couponRedemptions CouponRedemption[]
   availabilityLocks VillaAvailability[]
+  notifications     Notification[]
 
   @@index([userId])
   @@index([villaId, checkIn, checkOut])
@@ -372,11 +458,49 @@ model User {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  bookings  Booking[]
-  wishlists Wishlist[]
-  reviews   Review[]
+  bookings      Booking[]
+  wishlists     Wishlist[]
+  reviews       Review[]
+  notifications Notification[]
 
   @@map("users")
+}
+
+model Notification {
+  id                  String               @id @default(cuid())
+  userId              String?
+  bookingId           String?
+  recipientEmail      String?              @db.VarChar(190)
+  recipientRole       UserRole?
+  category            NotificationCategory
+  channel             NotificationChannel  @default(IN_APP)
+  status              NotificationStatus   @default(PENDING)
+  priority            NotificationPriority @default(NORMAL)
+  title               String               @db.VarChar(180)
+  message             String               @db.Text
+  actionLabel         String?              @db.VarChar(80)
+  actionUrl           String?              @db.Text
+  metadata            Json?
+  deduplicationKey    String?              @unique @db.VarChar(191)
+  isRead              Boolean              @default(false)
+  readAt              DateTime?
+  scheduledFor        DateTime?
+  processingStartedAt DateTime?
+  sentAt              DateTime?
+  failedAt            DateTime?
+  failureReason       String?              @db.Text
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead, createdAt])
+  @@index([recipientRole, isRead, createdAt])
+  @@index([bookingId])
+  @@index([status, scheduledFor])
+  @@index([category, createdAt])
+  @@map("notifications")
 }
 
 model Wishlist {

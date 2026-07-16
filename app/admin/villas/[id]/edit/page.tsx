@@ -1,5 +1,6 @@
-import { AdminVillaForm, arunaEditDefaults } from "@/components/admin-villa-form";
+import { AdminVillaForm } from "@/components/admin-villa-form";
 
-export default function EditVillaPage() {
-  return <AdminVillaForm mode="edit" initialValues={arunaEditDefaults} />;
+export default async function EditVillaPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return <AdminVillaForm mode="edit" villaId={id} />;
 }

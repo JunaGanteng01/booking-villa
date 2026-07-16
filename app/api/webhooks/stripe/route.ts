@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { triggerBookingConfirmationEmail } from "@/lib/booking-email-triggers";
 import {
   getBookingByCode,
   getBookingById,
@@ -11,6 +12,7 @@ import {
   updateStripeCheckoutSessionPaymentStatus,
   type StripeCheckoutSessionRecord,
 } from "@/lib/payment-store";
+import { triggerPaymentStatusChanged } from "@/lib/notification-triggers";
 
 type StripeWebhookEvent = {
   id?: string;
@@ -106,6 +108,19 @@ export async function POST(request: Request) {
     booking.id,
     mappedStatus.stripePaymentStatus,
   );
+
+  if (updatedBooking) {
+    void triggerPaymentStatusChanged({
+      booking: updatedBooking,
+      status: mappedStatus.label,
+      provider: "STRIPE",
+      eventId: normalizeString(event.id) || null,
+    });
+
+    if (mappedStatus.label === "PAID") {
+      void triggerBookingConfirmationEmail(updatedBooking);
+    }
+  }
 
   return NextResponse.json({
     data: {

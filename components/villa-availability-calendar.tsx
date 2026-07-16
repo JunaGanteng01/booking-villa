@@ -12,8 +12,9 @@ import {
   Lock,
   Wrench,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppNotifications } from "@/components/notification-root";
+import { getVillaAvailability, updateVillaAvailability } from "@/lib/admin-api-client";
 import { cn } from "@/lib/utils";
 
 type AvailabilityStatus = "AVAILABLE" | "BOOKED" | "PENDING" | "MAINTENANCE" | "BLOCKED";
@@ -97,7 +98,7 @@ const bookingLabels: Record<string, string> = {
   "2026-09-03": "VLK-1564",
 };
 
-export function VillaAvailabilityCalendar() {
+export function VillaAvailabilityCalendar({ villaId }: { villaId?: string }) {
   const shouldReduceMotion = useReducedMotion();
   const { notify } = useAppNotifications();
   const [month, setMonth] = useState(() => new Date(2026, 7, 1));
@@ -105,6 +106,28 @@ export function VillaAvailabilityCalendar() {
   const [rangeStart, setRangeStart] = useState<string | null>(null);
   const [rangeEnd, setRangeEnd] = useState<string | null>(null);
   const [nextStatus, setNextStatus] = useState<AvailabilityStatus>("BLOCKED");
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!villaId) return;
+    const from = dateKey(new Date(month.getFullYear(), month.getMonth(), 1));
+    const to = dateKey(new Date(month.getFullYear(), month.getMonth() + 1, 0));
+    let active = true;
+    setIsLoading(true);
+    getVillaAvailability(villaId, from, to)
+      .then(({ days }) => {
+        if (!active) return;
+        setAvailability((current) => ({ ...current, ...Object.fromEntries(days.map((day) => [day.date, day.status])) }));
+      })
+      .catch((error: unknown) => {
+        if (active) notify({ title: "Kalender gagal dimuat", description: error instanceof Error ? error.message : "Silakan coba lagi.", variant: "error" });
+      })
+      .finally(() => active && setIsLoading(false));
+    return () => {
+      active = false;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month, villaId]);
 
   const calendarDays = useMemo(() => {
     const year = month.getFullYear();
@@ -159,11 +182,16 @@ export function VillaAvailabilityCalendar() {
     return keys;
   }, [rangeEnd, rangeStart]);
 
-  const applyStatus = () => {
+  const applyStatus = async () => {
     if (!selectedKeys.length) {
       notify({ title: "Pilih tanggal terlebih dahulu", description: "Klik satu tanggal atau rentang tanggal pada kalender.", variant: "warning" });
       return;
     }
+    if (!villaId) {
+      notify({ title: "Simpan villa terlebih dahulu", description: "Kalender dapat diatur setelah data villa dibuat.", variant: "info" });
+      return;
+    }
+    const previous = { ...availability };
     setAvailability((current) => {
       const next = { ...current };
       selectedKeys.forEach((key) => {
@@ -171,13 +199,15 @@ export function VillaAvailabilityCalendar() {
       });
       return next;
     });
-    notify({
-      title: `${selectedKeys.length} tanggal diperbarui`,
-      description: `Status diubah menjadi ${statusMeta[nextStatus].label}. Perubahan masih berupa data tiruan.`,
-      variant: "success",
-    });
-    setRangeStart(null);
-    setRangeEnd(null);
+    try {
+      await updateVillaAvailability(villaId, { from: selectedKeys[0], to: selectedKeys.at(-1), status: nextStatus });
+      notify({ title: `${selectedKeys.length} tanggal diperbarui`, description: `Status disimpan sebagai ${statusMeta[nextStatus].label}.`, variant: "success" });
+      setRangeStart(null);
+      setRangeEnd(null);
+    } catch (error) {
+      setAvailability(previous);
+      notify({ title: "Ketersediaan gagal disimpan", description: error instanceof Error ? error.message : "Silakan coba lagi.", variant: "error" });
+    }
   };
 
   const rangeLabel = rangeStart
@@ -206,7 +236,7 @@ export function VillaAvailabilityCalendar() {
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} className="grid size-9 place-items-center rounded-xl border border-emerald-950/8 bg-white/70 transition hover:-translate-x-0.5 dark:border-white/8 dark:bg-white/6" aria-label="Bulan sebelumnya"><ChevronLeft className="size-4" /></button>
             <button type="button" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} className="grid size-9 place-items-center rounded-xl border border-emerald-950/8 bg-white/70 transition hover:translate-x-0.5 dark:border-white/8 dark:bg-white/6" aria-label="Bulan berikutnya"><ChevronRight className="size-4" /></button>
-            <motion.h3 key={month.toISOString()} initial={shouldReduceMotion ? false : { opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} className="ml-2 font-serif text-xl font-semibold capitalize">{monthFormatter.format(month)}</motion.h3>
+            <motion.h3 key={month.toISOString()} initial={shouldReduceMotion ? false : { opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} className="ml-2 font-serif text-xl font-semibold capitalize">{monthFormatter.format(month)}{isLoading ? <span className="ml-2 text-xs font-sans font-normal opacity-45">Memuat...</span> : null}</motion.h3>
           </div>
           <div className="flex items-center gap-2 text-xs text-emerald-950/40 dark:text-white/38"><Info className="size-3.5" /> Klik tanggal awal dan akhir untuk memilih rentang</div>
         </div>
@@ -255,7 +285,7 @@ export function VillaAvailabilityCalendar() {
               <div className="flex flex-wrap items-center gap-2">
                 <label className="relative"><span className="sr-only">Status baru</span><select value={nextStatus} onChange={(event) => setNextStatus(event.target.value as AvailabilityStatus)} className="h-10 appearance-none rounded-full border border-white/12 bg-white/8 pl-4 pr-9 text-xs font-semibold text-white outline-none"><option className="text-emerald-950" value="AVAILABLE">Tersedia</option><option className="text-emerald-950" value="BOOKED">Dipesan</option><option className="text-emerald-950" value="PENDING">Menunggu</option><option className="text-emerald-950" value="MAINTENANCE">Perawatan</option><option className="text-emerald-950" value="BLOCKED">Diblokir</option></select><ChevronRight className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 rotate-90 text-white/50" /></label>
                 <button type="button" onClick={() => { setRangeStart(null); setRangeEnd(null); }} className="grid size-10 place-items-center rounded-full border border-white/12 text-white/60" aria-label="Hapus pilihan tanggal"><Eraser className="size-4" /></button>
-                <button type="button" onClick={applyStatus} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-amber-300 px-5 text-xs font-bold text-emerald-950"><Check className="size-4" /> Terapkan status</button>
+                <button type="button" onClick={() => void applyStatus()} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-amber-300 px-5 text-xs font-bold text-emerald-950"><Check className="size-4" /> Terapkan status</button>
               </div>
             </div>
           </motion.div>
@@ -264,7 +294,7 @@ export function VillaAvailabilityCalendar() {
 
       <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-600/10 bg-amber-50/50 p-3.5 dark:border-amber-200/8 dark:bg-amber-200/[0.03]">
         <Info className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-200" />
-        <p className="text-xs leading-5 text-emerald-950/46 dark:text-white/42">Interaksi kalender ini hanya mengubah state di browser. Booking yang sudah terkonfirmasi tetap ditampilkan sebagai referensi data tiruan.</p>
+        <p className="text-xs leading-5 text-emerald-950/46 dark:text-white/42">Perubahan kalender disimpan melalui API. Tanggal booking yang sudah terkonfirmasi tetap dilindungi agar tidak tertimpa status operasional.</p>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import {
   getSavedPaymentMethod,
   saveManualPaymentProof,
 } from "@/lib/payment-store";
+import { triggerManualPaymentProofUploaded } from "@/lib/notification-triggers";
 
 type ManualProofJsonInput = {
   senderName?: string | null;
@@ -79,6 +80,8 @@ export async function POST(request: Request) {
     note: input.data.note,
     proof: input.data.proof,
   });
+
+  void triggerManualPaymentProofUploaded(booking);
 
   return NextResponse.json(
     {

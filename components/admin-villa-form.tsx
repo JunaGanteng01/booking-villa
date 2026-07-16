@@ -28,6 +28,7 @@ import { z } from "zod";
 import { useAppNotifications } from "@/components/notification-root";
 import { VillaGalleryManager } from "@/components/villa-gallery-manager";
 import { VillaAvailabilityCalendar } from "@/components/villa-availability-calendar";
+import { createAdminVilla, getAdminVilla, updateAdminVilla, type AdminVillaDto } from "@/lib/admin-api-client";
 import { cn } from "@/lib/utils";
 
 const villaFormSchema = z.object({
@@ -118,12 +119,37 @@ const numberFormat = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
+function toVillaFormValues(villa: AdminVillaDto): VillaFormValues {
+  const cover = villa.images.find((image) => image.isCover) ?? villa.images[0];
+  return {
+    name: villa.name,
+    slug: villa.slug,
+    category: villa.category,
+    location: villa.location,
+    address: villa.address,
+    shortDescription: villa.shortDescription,
+    description: villa.description,
+    imageUrl: cover?.url ?? createDefaults.imageUrl,
+    price: villa.pricePerNight,
+    weekendPrice: villa.weekendPricePerNight ?? villa.pricePerNight,
+    capacity: villa.capacity,
+    bedrooms: villa.bedrooms,
+    bathrooms: villa.bathrooms,
+    sizeSqm: villa.sizeSqm ?? 20,
+    status: villa.status === "ARCHIVED" ? "DRAFT" : villa.status,
+    featured: villa.isFeatured,
+    amenities: villa.amenities,
+  };
+}
+
 export function AdminVillaForm({
   mode,
   initialValues,
+  villaId,
 }: {
   mode: "create" | "edit";
   initialValues?: VillaFormValues;
+  villaId?: string;
 }) {
   const router = useRouter();
   const shouldReduceMotion = useReducedMotion();
@@ -131,11 +157,14 @@ export function AdminVillaForm({
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("basic");
+  const [persistedVilla, setPersistedVilla] = useState<AdminVillaDto | null>(null);
+  const [isLoadingVilla, setIsLoadingVilla] = useState(mode === "edit" && Boolean(villaId) && !initialValues);
   const {
     register,
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors, isDirty, isSubmitting, isSubmitSuccessful },
   } = useForm<VillaFormValues>({
     resolver: zodResolver(villaFormSchema),
@@ -167,6 +196,26 @@ export function AdminVillaForm({
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
   }, []);
 
+  useEffect(() => {
+    if (mode !== "edit" || !villaId || initialValues) return;
+    let active = true;
+    getAdminVilla(villaId)
+      .then(({ villa }) => {
+        if (!active) return;
+        setPersistedVilla(villa);
+        reset(toVillaFormValues(villa));
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        notify({ title: "Villa gagal dimuat", description: error instanceof Error ? error.message : "Data villa tidak tersedia.", variant: "error" });
+      })
+      .finally(() => active && setIsLoadingVilla(false));
+    return () => {
+      active = false;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialValues, mode, reset, villaId]);
+
   const toggleTheme = () => {
     setTheme((current) => {
       const next = current === "dark" ? "light" : "dark";
@@ -188,12 +237,21 @@ export function AdminVillaForm({
   };
 
   const onSubmit = async (data: VillaFormValues) => {
-    await new Promise((resolve) => window.setTimeout(resolve, 650));
-    notify({
-      title: mode === "create" ? "Villa baru siap ditinjau" : "Perubahan villa tersimpan",
-      description: `${data.name} disimpan sebagai ${data.status.toLocaleLowerCase("id-ID")}.`,
-      variant: "success",
-    });
+    try {
+      const result = mode === "create"
+        ? await createAdminVilla(data)
+        : await updateAdminVilla(villaId ?? persistedVilla?.id ?? data.slug, data);
+      setPersistedVilla(result.villa);
+      reset(toVillaFormValues(result.villa));
+      notify({
+        title: mode === "create" ? "Villa baru berhasil dibuat" : "Perubahan villa tersimpan",
+        description: `${data.name} tersimpan sebagai ${data.status.toLocaleLowerCase("id-ID")}.`,
+        variant: "success",
+      });
+      if (mode === "create") router.replace(`/admin/villas/${result.villa.id}/edit`);
+    } catch (error) {
+      notify({ title: "Villa gagal disimpan", description: error instanceof Error ? error.message : "Silakan coba lagi.", variant: "error" });
+    }
   };
 
   const onInvalid = () => {
@@ -220,6 +278,12 @@ export function AdminVillaForm({
     { id: "amenities", label: "Fasilitas", complete: values.amenities.length >= 3 },
     { id: "publish", label: "Publikasi", complete: Boolean(values.status) },
   ];
+
+  if (isLoadingVilla) {
+    return <main className="grid min-h-screen place-items-center bg-[#f2f4f0] dark:bg-[#06100e]"><div className="text-center"><span className="mx-auto block size-10 animate-spin rounded-full border-2 border-emerald-700/20 border-t-emerald-700" /><p className="mt-3 text-sm text-emerald-950/50 dark:text-white/48">Memuat data villa...</p></div></main>;
+  }
+
+  const activeVillaId = persistedVilla?.id ?? villaId;
 
   return (
     <main className="min-h-screen bg-[#f2f4f0] text-foreground dark:bg-[#06100e]">
@@ -257,13 +321,15 @@ export function AdminVillaForm({
               <Field label="Nama villa" error={errors.name?.message} className="sm:col-span-2"><input {...register("name")} onBlur={(event) => { register("name").onBlur(event); if (mode === "create" && !values.slug) generateSlug(); }} placeholder="Contoh: Villa Akasa Sky" className={inputClass(Boolean(errors.name))} /></Field>
               <Field label="Slug URL" error={errors.slug?.message} helper="villaku.id/villas/slug"><div className="relative"><input {...register("slug")} placeholder="villa-akasa-sky" className={cn(inputClass(Boolean(errors.slug)), "pr-10")} /><button type="button" onClick={generateSlug} className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-lg text-emerald-700 hover:bg-emerald-100 dark:text-emerald-200 dark:hover:bg-emerald-300/10" aria-label="Buat slug dari nama"><WandSparkles className="size-4" /></button></div></Field>
               <Field label="Kategori" error={errors.category?.message}><SelectField {...register("category")} invalid={Boolean(errors.category)}><option value="">Pilih kategori</option><option>Beachfront</option><option>Cliffside</option><option>Jungle</option><option>Family</option><option>Honeymoon</option></SelectField></Field>
-              <Field label="URL gambar utama" error={errors.imageUrl?.message} className="sm:col-span-2"><div className="flex gap-2"><input {...register("imageUrl")} className={inputClass(Boolean(errors.imageUrl))} /><button type="button" onClick={() => notify({ title: "Upload Cloudinary disiapkan", description: "Pada fase frontend, gunakan URL gambar untuk pratinjau.", variant: "info" })} className="grid size-11 shrink-0 place-items-center rounded-xl border border-emerald-950/10 bg-white text-emerald-700 dark:border-white/10 dark:bg-white/6 dark:text-emerald-200" aria-label="Upload gambar"><UploadCloud className="size-4" /></button></div></Field>
+              <Field label="URL gambar utama" error={errors.imageUrl?.message} className="sm:col-span-2"><div className="flex gap-2"><input {...register("imageUrl")} className={inputClass(Boolean(errors.imageUrl))} /><button type="button" onClick={() => notify({ title: "Kelola foto melalui galeri", description: activeVillaId ? "Unggah foto pada bagian galeri lalu jadikan salah satunya sebagai cover." : "Simpan villa dahulu, kemudian unggah foto pada bagian galeri.", variant: "info" })} className="grid size-11 shrink-0 place-items-center rounded-xl border border-emerald-950/10 bg-white text-emerald-700 dark:border-white/10 dark:bg-white/6 dark:text-emerald-200" aria-label="Petunjuk upload gambar"><UploadCloud className="size-4" /></button></div></Field>
             </div>
           </FormSection>
 
-          <FormSection id="gallery" eyebrow="Visual" title="Galeri foto villa" description="Atur cover, urutan, dan teks alternatif foto. Semua perubahan masih berupa preview lokal.">
+          <FormSection id="gallery" eyebrow="Visual" title="Galeri foto villa" description="Atur cover, urutan, dan teks alternatif foto yang tersimpan pada villa.">
             <VillaGalleryManager
               coverUrl={values.imageUrl}
+              villaId={activeVillaId}
+              initialImages={persistedVilla?.images}
               onCoverChange={(url) => setValue("imageUrl", url, { shouldDirty: true, shouldValidate: true })}
             />
           </FormSection>
@@ -289,7 +355,7 @@ export function AdminVillaForm({
           </FormSection>
 
           <FormSection id="availability" eyebrow="Kalender" title="Ketersediaan villa" description="Pantau booking dan ubah status tanggal untuk blok operasional atau maintenance.">
-            <VillaAvailabilityCalendar />
+            <VillaAvailabilityCalendar villaId={activeVillaId} />
           </FormSection>
 
           <FormSection id="amenities" eyebrow="Fasilitas" title="Detail yang membuat stay istimewa" description="Pilih minimal tiga fasilitas yang tersedia dan siap digunakan tamu.">
@@ -301,7 +367,7 @@ export function AdminVillaForm({
             <label className="mt-4 flex cursor-pointer items-center justify-between rounded-xl border border-amber-600/12 bg-amber-50/60 p-4 dark:border-amber-200/10 dark:bg-amber-200/[0.04]"><span><span className="block text-sm font-semibold">Tampilkan sebagai featured villa</span><span className="mt-1 block text-xs text-emerald-950/42 dark:text-white/40">Villa mendapat prioritas di landing page dan katalog.</span></span><input type="checkbox" {...register("featured")} className="size-5 accent-emerald-700" /></label>
           </FormSection>
 
-          <div className="flex flex-col gap-3 rounded-2xl bg-emerald-950 p-5 text-white sm:flex-row sm:items-center sm:justify-between"><div><p className="font-serif text-xl font-semibold">{isSubmitSuccessful ? "Perubahan tersimpan" : "Siap menyimpan villa?"}</p><p className="mt-1 text-xs text-white/46">Validasi dummy berjalan di browser; belum mengirim data ke server.</p></div><div className="flex gap-2"><button type="button" onClick={() => router.push("/admin/villas")} className="min-h-10 rounded-full border border-white/12 px-4 text-sm font-semibold text-white/70">Batal</button><button type="submit" disabled={isSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-amber-300 px-5 text-sm font-bold text-emerald-950 disabled:opacity-60"><Save className="size-4" /> {isSubmitting ? "Menyimpan..." : mode === "create" ? "Simpan villa" : "Simpan perubahan"}</button></div></div>
+          <div className="flex flex-col gap-3 rounded-2xl bg-emerald-950 p-5 text-white sm:flex-row sm:items-center sm:justify-between"><div><p className="font-serif text-xl font-semibold">{isSubmitSuccessful ? "Perubahan tersimpan" : "Siap menyimpan villa?"}</p><p className="mt-1 text-xs text-white/46">Data divalidasi lalu disimpan melalui API admin Villaku.</p></div><div className="flex gap-2"><button type="button" onClick={() => router.push("/admin/villas")} className="min-h-10 rounded-full border border-white/12 px-4 text-sm font-semibold text-white/70">Batal</button><button type="submit" disabled={isSubmitting} className="inline-flex min-h-10 items-center gap-2 rounded-full bg-amber-300 px-5 text-sm font-bold text-emerald-950 disabled:opacity-60"><Save className="size-4" /> {isSubmitting ? "Menyimpan..." : mode === "create" ? "Simpan villa" : "Simpan perubahan"}</button></div></div>
         </form>
 
         <aside className="hidden xl:block"><div className="sticky top-24"><p className="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-emerald-950/36 dark:text-white/34">Live preview</p><VillaPreview values={values} /><button type="button" onClick={() => setPreviewOpen(true)} className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full border border-emerald-950/10 bg-white/60 text-xs font-bold text-emerald-800 dark:border-white/10 dark:bg-white/5 dark:text-white"><Eye className="size-4" /> Buka preview besar</button></div></aside>

@@ -13,9 +13,10 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import { useAppNotifications } from "@/components/notification-root";
+import { deleteVillaImage, updateVillaGallery, uploadVillaImages, type AdminVillaImage } from "@/lib/admin-api-client";
 import { cn } from "@/lib/utils";
 
 type GalleryImage = {
@@ -45,22 +46,50 @@ function createInitialImages(coverUrl: string): GalleryImage[] {
   ];
 }
 
+function fromApiImages(images: AdminVillaImage[]): GalleryImage[] {
+  return [...images]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((image) => ({ id: image.id, url: image.url, alt: image.alt ?? "Foto villa", isCover: image.isCover }));
+}
+
 export function VillaGalleryManager({
   coverUrl,
   onCoverChange,
+  villaId,
+  initialImages,
 }: {
   coverUrl: string;
   onCoverChange: (url: string) => void;
+  villaId?: string;
+  initialImages?: AdminVillaImage[];
 }) {
   const shouldReduceMotion = useReducedMotion();
   const { notify } = useAppNotifications();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [images, setImages] = useState<GalleryImage[]>(() => createInitialImages(coverUrl));
+  const [images, setImages] = useState<GalleryImage[]>(() => initialImages?.length ? fromApiImages(initialImages) : createInitialImages(coverUrl));
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
 
+  useEffect(() => {
+    if (initialImages?.length) setImages(fromApiImages(initialImages));
+  }, [initialImages]);
+
+  const persistOrder = async (next: GalleryImage[]) => {
+    if (!villaId) return;
+    try {
+      const { images: saved } = await updateVillaGallery(villaId, next.map((image, index) => ({ id: image.id, sortOrder: index, isCover: image.isCover, alt: image.alt })));
+      setImages(fromApiImages(saved));
+    } catch (error) {
+      notify({ title: "Galeri gagal disimpan", description: error instanceof Error ? error.message : "Silakan coba lagi.", variant: "error" });
+    }
+  };
+
   const addFiles = async (files: File[]) => {
+    if (!villaId) {
+      notify({ title: "Simpan villa terlebih dahulu", description: "Setelah villa dibuat, Anda dapat mengunggah dan mengatur galeri.", variant: "info" });
+      return;
+    }
     const validFiles = files.filter((file) => file.type.startsWith("image/") && file.size <= 10 * 1024 * 1024);
     if (!validFiles.length) {
       notify({
@@ -78,33 +107,17 @@ export function VillaGalleryManager({
       return;
     }
 
-    const uploaded = await Promise.all(
-      selectedFiles.map(
-        (file) =>
-          new Promise<GalleryImage>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () =>
-              resolve({
-                id: `upload-${Date.now()}-${file.name}`,
-                url: String(reader.result),
-                alt: file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "),
-                isCover: false,
-                uploading: true,
-              });
-            reader.readAsDataURL(file);
-          }),
-      ),
-    );
-
-    setImages((items) => [...items, ...uploaded]);
-    window.setTimeout(() => {
-      setImages((items) => items.map((image) => ({ ...image, uploading: false })));
+    try {
+      const { images: uploaded } = await uploadVillaImages(villaId, selectedFiles);
+      setImages((items) => [...items, ...fromApiImages(uploaded)]);
       notify({
         title: `${uploaded.length} foto ditambahkan`,
-        description: "Preview lokal siap. Upload ke Cloudinary akan dilakukan oleh backend.",
+        description: "Foto berhasil disimpan ke galeri villa.",
         variant: "success",
       });
-    }, 700);
+    } catch (error) {
+      notify({ title: "Foto gagal diunggah", description: error instanceof Error ? error.message : "Silakan coba lagi.", variant: "error" });
+    }
   };
 
   const handleInput = (event: ChangeEvent<HTMLInputElement>) => {
@@ -121,12 +134,14 @@ export function VillaGalleryManager({
   const setCover = (id: string) => {
     const selected = images.find((image) => image.id === id);
     if (!selected) return;
-    setImages((items) => items.map((image) => ({ ...image, isCover: image.id === id })));
+    const next = images.map((image) => ({ ...image, isCover: image.id === id }));
+    setImages(next);
+    void persistOrder(next);
     onCoverChange(selected.url);
     notify({ title: "Foto cover diperbarui", description: "Foto ini akan tampil pertama di katalog.", variant: "success" });
   };
 
-  const removeImage = (id: string) => {
+  const removeImage = async (id: string) => {
     const selected = images.find((image) => image.id === id);
     const remaining = images.filter((image) => image.id !== id);
     if (!remaining.length) return;
@@ -137,6 +152,16 @@ export function VillaGalleryManager({
     }
     setImages(remaining);
     setEditingId(null);
+    if (villaId) {
+      try {
+        await deleteVillaImage(villaId, id);
+        if (selected?.isCover) await persistOrder(remaining);
+        notify({ title: "Foto dihapus", description: "Galeri villa berhasil diperbarui.", variant: "success" });
+      } catch (error) {
+        setImages(images);
+        notify({ title: "Foto gagal dihapus", description: error instanceof Error ? error.message : "Silakan coba lagi.", variant: "error" });
+      }
+    }
   };
 
   const updateAlt = (id: string, alt: string) => {
@@ -150,6 +175,7 @@ export function VillaGalleryManager({
       if (currentIndex < 0 || nextIndex < 0 || nextIndex >= items.length) return items;
       const next = [...items];
       [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
+      void persistOrder(next);
       return next;
     });
   };
@@ -163,6 +189,7 @@ export function VillaGalleryManager({
       const next = [...items];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
+      void persistOrder(next);
       return next;
     });
     setDraggingId(null);
@@ -251,14 +278,14 @@ export function VillaGalleryManager({
                 <div className="absolute bottom-2 right-2 flex gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                   {!image.isCover ? <button type="button" onClick={() => setCover(image.id)} className="grid size-8 place-items-center rounded-lg bg-white/92 text-amber-600 shadow-lg" aria-label={`Jadikan ${image.alt} sebagai cover`}><Star className="size-3.5" /></button> : null}
                   <button type="button" onClick={() => setEditingId((current) => (current === image.id ? null : image.id))} className="grid size-8 place-items-center rounded-lg bg-white/92 text-emerald-700 shadow-lg" aria-label={`Edit teks alternatif ${image.alt}`}><Pencil className="size-3.5" /></button>
-                  {images.length > 1 ? <button type="button" onClick={() => removeImage(image.id)} className="grid size-8 place-items-center rounded-lg bg-white/92 text-rose-600 shadow-lg" aria-label={`Hapus ${image.alt}`}><Trash2 className="size-3.5" /></button> : null}
+                  {images.length > 1 ? <button type="button" onClick={() => void removeImage(image.id)} className="grid size-8 place-items-center rounded-lg bg-white/92 text-rose-600 shadow-lg" aria-label={`Hapus ${image.alt}`}><Trash2 className="size-3.5" /></button> : null}
                 </div>
               </div>
 
               <AnimatePresence>
                 {editingId === image.id ? (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden bg-[#fffdf8] dark:bg-[#10231e]">
-                    <label className="block p-3"><span className="mb-1.5 flex items-center justify-between text-[0.62rem] font-bold text-emerald-950/48 dark:text-white/46"><span>Teks alternatif</span><button type="button" onClick={() => setEditingId(null)} aria-label="Tutup editor"><X className="size-3.5" /></button></span><input value={image.alt} onChange={(event) => updateAlt(image.id, event.target.value)} className="h-9 w-full rounded-lg border border-emerald-950/10 bg-white px-2.5 text-xs outline-none focus:border-emerald-500 dark:border-white/10 dark:bg-white/6" /></label>
+                    <label className="block p-3"><span className="mb-1.5 flex items-center justify-between text-[0.62rem] font-bold text-emerald-950/48 dark:text-white/46"><span>Teks alternatif</span><button type="button" onClick={() => setEditingId(null)} aria-label="Tutup editor"><X className="size-3.5" /></button></span><input value={image.alt} onChange={(event) => updateAlt(image.id, event.target.value)} onBlur={() => void persistOrder(images)} className="h-9 w-full rounded-lg border border-emerald-950/10 bg-white px-2.5 text-xs outline-none focus:border-emerald-500 dark:border-white/10 dark:bg-white/6" /></label>
                   </motion.div>
                 ) : null}
               </AnimatePresence>

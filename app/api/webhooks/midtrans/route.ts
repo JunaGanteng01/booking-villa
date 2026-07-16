@@ -1,6 +1,15 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getBookingByCode, updateBookingPaymentState } from "@/lib/booking-store";
+import { triggerBookingConfirmationEmail } from "@/lib/booking-email-triggers";
+import {
+  getBookingByCode,
+  updateBookingPaymentState,
+  type BookingStoreRecord,
+} from "@/lib/booking-store";
+import {
+  triggerPaymentStatusChanged,
+  type PaymentEventStatus,
+} from "@/lib/notification-triggers";
 
 type MidtransNotification = {
   order_id?: string;
@@ -64,6 +73,19 @@ export async function POST(request: Request) {
   const mappedStatus = mapMidtransStatus(payload);
   const updatedBooking = updateBookingPaymentState(booking.id, mappedStatus.bookingState);
 
+  if (updatedBooking) {
+    void triggerPaymentStatusChanged({
+      booking: updatedBooking,
+      status: mappedStatus.label,
+      provider: "MIDTRANS",
+      eventId: normalizeString(payload.transaction_id) || null,
+    });
+
+    if (mappedStatus.label === "PAID") {
+      void triggerBookingConfirmationEmail(updatedBooking);
+    }
+  }
+
   return NextResponse.json({
     data: {
       received: true,
@@ -109,7 +131,13 @@ function validateSignature(payload: MidtransNotification) {
     : { ok: false as const, message: "signature_key tidak valid." };
 }
 
-function mapMidtransStatus(payload: MidtransNotification) {
+function mapMidtransStatus(payload: MidtransNotification): {
+  label: PaymentEventStatus;
+  bookingState: {
+    status: BookingStoreRecord["status"];
+    paymentStatus: BookingStoreRecord["paymentStatus"];
+  };
+} {
   const transactionStatus = normalizeString(payload.transaction_status);
   const fraudStatus = normalizeString(payload.fraud_status);
 

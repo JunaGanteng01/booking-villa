@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { triggerReviewRequestEmail } from "@/lib/booking-email-triggers";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(req: Request) {
@@ -51,17 +52,22 @@ export async function GET(req: Request) {
       });
 
       if (!existingReview) {
-        // Simulate sending email
-        const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/villas/${booking.villaId}/review`;
-        
-        console.log(`[CRON] Mengirim email permintaan ulasan ke ${booking.user.email} untuk villa ${booking.villa.name}. Link: ${reviewUrl}`);
-        
-        emailsSent.push({
-          bookingId: booking.id,
-          userEmail: booking.user.email,
+        const delivery = await triggerReviewRequestEmail({
+          guestName: booking.user.name || booking.guestName,
+          guestEmail: booking.user.email,
+          bookingCode: booking.bookingCode,
+          villaName: booking.villa.name,
+          villaId: booking.villaId,
+          checkOut: booking.checkOut,
         });
-        
-        // Mark as sent or save log if needed
+
+        if (delivery.ok) {
+          emailsSent.push({
+            bookingId: booking.id,
+            provider: delivery.result.provider,
+            status: delivery.result.status,
+          });
+        }
       }
     }
 
