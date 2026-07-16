@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { AdminFilterBar } from "@/components/admin-filter-bar";
 import { useAppNotifications } from "@/components/notification-root";
 import type { BookingStoreRecord } from "@/lib/booking-store";
 import { generateInvoicePdf } from "@/lib/invoice-pdf";
@@ -507,63 +508,43 @@ export default function AdminBookingListPage() {
           </div>
 
           <section className="mt-6 overflow-hidden rounded-[1.7rem] border border-emerald-950/8 bg-white/68 shadow-[0_20px_70px_rgba(4,34,28,0.055)] dark:border-white/8 dark:bg-white/[0.045]">
-            <div className="p-4 sm:p-5">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="relative w-full xl:max-w-md">
-                  <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-emerald-950/35 dark:text-white/35" />
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Cari kode, nama tamu, email, villa..."
-                    className="h-11 w-full rounded-xl border border-emerald-950/10 bg-white/74 pl-10 pr-4 text-sm outline-none focus:border-emerald-500/35 focus:ring-4 focus:ring-emerald-500/10 dark:border-white/10 dark:bg-white/6"
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Filter
-                    value={status}
-                    label="Status booking"
-                    onChange={(value) => setStatus(value as typeof status)}
-                    options={[
-                      { value: "ALL", label: "Semua status" },
-                      ...Object.entries(statusMeta).map(([value, meta]) => ({
-                        value,
-                        label: meta.label,
-                      })),
-                    ]}
-                  />
-                  <Filter
-                    value={payment}
-                    label="Status pembayaran"
-                    onChange={(value) => setPayment(value as typeof payment)}
-                    options={[
-                      { value: "ALL", label: "Semua pembayaran" },
-                      ...Object.entries(paymentMeta).map(([value, meta]) => ({
-                        value,
-                        label: meta.label,
-                      })),
-                    ]}
-                  />
-                </div>
-              </div>
-              <div className="mt-4 flex items-center justify-between border-t border-emerald-950/7 pt-4 text-xs text-emerald-950/40 dark:border-white/7 dark:text-white/38">
-                <p>
-                  <strong className="text-emerald-700 dark:text-emerald-300">
-                    {visible.length}
-                  </strong>{" "}
-                  booking ditemukan
-                </p>
-                {query || status !== "ALL" || payment !== "ALL" ? (
-                  <button
-                    type="button"
-                    onClick={reset}
-                    className="inline-flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-300"
-                  >
-                    <X className="size-3.5" /> Reset filter
-                  </button>
-                ) : null}
-              </div>
-            </div>
+            <AdminFilterBar
+              query={query}
+              onQueryChange={setQuery}
+              placeholder="Cari kode, nama tamu, email, villa..."
+              resultCount={visible.length}
+              resultLabel="booking ditemukan"
+              hasActiveFilters={Boolean(
+                query || status !== "ALL" || payment !== "ALL",
+              )}
+              onReset={reset}
+              filters={[
+                {
+                  label: "Status booking",
+                  value: status,
+                  onChange: (value) => setStatus(value as typeof status),
+                  options: [
+                    { value: "ALL", label: "Semua status" },
+                    ...Object.entries(statusMeta).map(([value, meta]) => ({
+                      value,
+                      label: meta.label,
+                    })),
+                  ],
+                },
+                {
+                  label: "Status pembayaran",
+                  value: payment,
+                  onChange: (value) => setPayment(value as typeof payment),
+                  options: [
+                    { value: "ALL", label: "Semua pembayaran" },
+                    ...Object.entries(paymentMeta).map(([value, meta]) => ({
+                      value,
+                      label: meta.label,
+                    })),
+                  ],
+                },
+              ]}
+            />
 
             <div className="hidden overflow-x-auto border-t border-emerald-950/8 dark:border-white/8 md:block">
               <table className="w-full min-w-[1050px] border-collapse">
