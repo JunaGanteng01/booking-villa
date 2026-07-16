@@ -1,0 +1,1333 @@
+"use client";
+
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  BarChart3,
+  Bell,
+  Building2,
+  CalendarCheck2,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  CircleDollarSign,
+  Clock3,
+  Download,
+  Eye,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  MessageSquareText,
+  Moon,
+  Search,
+  Settings,
+  SlidersHorizontal,
+  Sparkles,
+  Sun,
+  UserRound,
+  Users,
+  X,
+  XCircle,
+} from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { useAppNotifications } from "@/components/notification-root";
+import type { BookingStoreRecord } from "@/lib/booking-store";
+import { generateInvoicePdf } from "@/lib/invoice-pdf";
+import { cn } from "@/lib/utils";
+
+type BookingStatus =
+  "PENDING" | "CONFIRMED" | "CHECKED_IN" | "COMPLETED" | "CANCELLED";
+type PaymentStatus = "PAID" | "PENDING" | "FAILED" | "REFUNDED";
+
+type BookingItem = {
+  id: string;
+  code: string;
+  guest: string;
+  email: string;
+  initials: string;
+  villa: string;
+  image: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  guests: number;
+  total: number;
+  status: BookingStatus;
+  payment: PaymentStatus;
+  createdAt: string;
+};
+
+const bookings: BookingItem[] = [
+  {
+    id: "b-1482",
+    code: "VLK-260823-1482",
+    guest: "Maya Putri",
+    email: "maya@villaku.test",
+    initials: "MP",
+    villa: "Villa Aruna Cliffside",
+    image:
+      "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=400&q=80",
+    checkIn: "23 Agu 2026",
+    checkOut: "26 Agu 2026",
+    nights: 3,
+    guests: 6,
+    total: 21312000,
+    status: "PENDING",
+    payment: "PENDING",
+    createdAt: "14 Jul, 09.42",
+  },
+  {
+    id: "b-1519",
+    code: "VLK-260902-1519",
+    guest: "Rizky Ananda",
+    email: "rizky@example.com",
+    initials: "RA",
+    villa: "Sagara Beach House",
+    image:
+      "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=400&q=80",
+    checkIn: "2 Sep 2026",
+    checkOut: "7 Sep 2026",
+    nights: 5,
+    guests: 8,
+    total: 29400000,
+    status: "CONFIRMED",
+    payment: "PAID",
+    createdAt: "14 Jul, 08.18",
+  },
+  {
+    id: "b-1467",
+    code: "VLK-260819-1467",
+    guest: "Sofia Laurent",
+    email: "sofia@example.com",
+    initials: "SL",
+    villa: "Nara Jungle Residence",
+    image:
+      "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80",
+    checkIn: "19 Agu 2026",
+    checkOut: "23 Agu 2026",
+    nights: 4,
+    guests: 4,
+    total: 16352000,
+    status: "PENDING",
+    payment: "FAILED",
+    createdAt: "13 Jul, 21.06",
+  },
+  {
+    id: "b-1441",
+    code: "VLK-260812-1441",
+    guest: "Daniel Wijaya",
+    email: "daniel@example.com",
+    initials: "DW",
+    villa: "Luna Honeymoon Villa",
+    image:
+      "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=400&q=80",
+    checkIn: "12 Agu 2026",
+    checkOut: "15 Agu 2026",
+    nights: 3,
+    guests: 2,
+    total: 9912000,
+    status: "CHECKED_IN",
+    payment: "PAID",
+    createdAt: "11 Jul, 16.35",
+  },
+  {
+    id: "b-1398",
+    code: "VLK-260730-1398",
+    guest: "Keiko Tanaka",
+    email: "keiko@example.com",
+    initials: "KT",
+    villa: "Samaya Ocean Pavilion",
+    image:
+      "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=400&q=80",
+    checkIn: "30 Jul 2026",
+    checkOut: "3 Agu 2026",
+    nights: 4,
+    guests: 5,
+    total: 25760000,
+    status: "COMPLETED",
+    payment: "PAID",
+    createdAt: "8 Jul, 11.20",
+  },
+  {
+    id: "b-1374",
+    code: "VLK-260725-1374",
+    guest: "Nadia Rahman",
+    email: "nadia@example.com",
+    initials: "NR",
+    villa: "Maira Family Estate",
+    image:
+      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80",
+    checkIn: "25 Jul 2026",
+    checkOut: "28 Jul 2026",
+    nights: 3,
+    guests: 10,
+    total: 20496000,
+    status: "CANCELLED",
+    payment: "REFUNDED",
+    createdAt: "5 Jul, 14.08",
+  },
+];
+
+const statusMeta: Record<
+  BookingStatus,
+  { label: string; className: string; icon: typeof Clock3 }
+> = {
+  PENDING: {
+    label: "Menunggu",
+    className:
+      "bg-amber-100 text-amber-700 dark:bg-amber-300/12 dark:text-amber-200",
+    icon: Clock3,
+  },
+  CONFIRMED: {
+    label: "Dikonfirmasi",
+    className:
+      "bg-emerald-100 text-emerald-700 dark:bg-emerald-300/12 dark:text-emerald-200",
+    icon: CheckCircle2,
+  },
+  CHECKED_IN: {
+    label: "Check-in",
+    className: "bg-sky-100 text-sky-700 dark:bg-sky-300/12 dark:text-sky-200",
+    icon: CalendarCheck2,
+  },
+  COMPLETED: {
+    label: "Selesai",
+    className:
+      "bg-slate-200/70 text-slate-600 dark:bg-white/8 dark:text-white/55",
+    icon: CheckCircle2,
+  },
+  CANCELLED: {
+    label: "Dibatalkan",
+    className:
+      "bg-rose-100 text-rose-700 dark:bg-rose-300/12 dark:text-rose-200",
+    icon: XCircle,
+  },
+};
+
+const paymentMeta: Record<PaymentStatus, { label: string; className: string }> =
+  {
+    PAID: {
+      label: "Lunas",
+      className: "text-emerald-700 dark:text-emerald-300",
+    },
+    PENDING: {
+      label: "Menunggu bayar",
+      className: "text-amber-700 dark:text-amber-300",
+    },
+    FAILED: { label: "Gagal", className: "text-rose-600 dark:text-rose-300" },
+    REFUNDED: {
+      label: "Refund",
+      className: "text-violet-700 dark:text-violet-300",
+    },
+  };
+
+const navItems = [
+  { label: "Overview", icon: LayoutDashboard, href: "/admin" },
+  {
+    label: "Booking",
+    icon: CalendarDays,
+    href: "/admin/bookings",
+    active: true,
+  },
+  { label: "Villa", icon: Building2, href: "/admin/villas" },
+  { label: "Pembayaran", icon: CircleDollarSign, href: "/admin/payments" },
+  { label: "Customer", icon: Users, href: "/admin/customers" },
+  { label: "Ulasan", icon: MessageSquareText, href: "/admin/reviews" },
+  { label: "Notifikasi", icon: Bell, href: "/admin/notifications" },
+  { label: "Laporan", icon: BarChart3, href: "/admin/reports" },
+  { label: "Pengaturan", icon: Settings, href: "/admin/settings" },
+];
+
+const money = new Intl.NumberFormat("id-ID", {
+  style: "currency",
+  currency: "IDR",
+  maximumFractionDigits: 0,
+});
+
+export default function AdminBookingListPage() {
+  const reduceMotion = useReducedMotion();
+  const { notify } = useAppNotifications();
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState<BookingItem | null>(
+    null,
+  );
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<"ALL" | BookingStatus>("ALL");
+  const [payment, setPayment] = useState<"ALL" | PaymentStatus>("ALL");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("villaku-theme");
+    const next =
+      saved === "dark" ||
+      (!saved && window.matchMedia("(prefers-color-scheme: dark)").matches)
+        ? "dark"
+        : "light";
+    setTheme(next);
+    document.documentElement.classList.toggle("dark", next === "dark");
+  }, []);
+
+  const visible = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase("id-ID");
+    return bookings.filter((item) => {
+      const matchesQuery =
+        !normalized ||
+        `${item.code} ${item.guest} ${item.email} ${item.villa}`
+          .toLocaleLowerCase("id-ID")
+          .includes(normalized);
+      return (
+        matchesQuery &&
+        (status === "ALL" || item.status === status) &&
+        (payment === "ALL" || item.payment === payment)
+      );
+    });
+  }, [payment, query, status]);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.classList.toggle("dark", next === "dark");
+    window.localStorage.setItem("villaku-theme", next);
+  };
+
+  const reset = () => {
+    setQuery("");
+    setStatus("ALL");
+    setPayment("ALL");
+  };
+
+  const exportBookings = () => {
+    try {
+      const workbook = createExcelWorkbook(visible);
+      const blob = new Blob([workbook], {
+        type: "application/vnd.ms-excel;charset=utf-8",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `villaku-booking-${formatIsoDate(new Date())}.xls`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      notify({
+        title: "Data booking berhasil diekspor",
+        description: `${visible.length} baris data tersedia dalam file Excel.`,
+        variant: "success",
+      });
+    } catch {
+      notify({
+        title: "Ekspor Excel gagal",
+        description: "Silakan coba lagi setelah memuat ulang halaman.",
+        variant: "error",
+      });
+    }
+  };
+
+  const exportInvoice = (item: BookingItem) => {
+    try {
+      const pdf = generateInvoicePdf({
+        booking: toInvoiceBooking(item),
+        provider: paymentProvider(item.payment),
+      });
+      const blob = new Blob([pdf.buffer as ArrayBuffer], {
+        type: "application/pdf",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `villaku-invoice-${item.code.toLowerCase()}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      notify({
+        title: "Invoice berhasil dibuat",
+        description: `PDF invoice ${item.code} mulai diunduh.`,
+        variant: "success",
+      });
+    } catch {
+      notify({
+        title: "Invoice gagal dibuat",
+        description: "Silakan coba lagi atau hubungi administrator sistem.",
+        variant: "error",
+      });
+    }
+  };
+
+  return (
+    <main className="min-h-screen bg-[#f2f4f0] text-foreground dark:bg-[#06100e]">
+      <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
+      <div className="min-h-screen lg:pl-64">
+        <header className="sticky top-0 z-30 border-b border-emerald-950/8 bg-[#f2f4f0]/86 px-4 py-3 backdrop-blur-2xl dark:border-white/8 dark:bg-[#06100e]/88 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                className="grid size-10 place-items-center rounded-xl border border-emerald-950/10 bg-white/70 lg:hidden dark:border-white/10 dark:bg-white/6"
+                aria-label="Buka navigasi admin"
+              >
+                <Menu className="size-4" />
+              </button>
+              <div>
+                <p className="font-serif text-lg font-semibold leading-none sm:text-xl">
+                  Manajemen booking
+                </p>
+                <p className="mt-1 hidden text-xs text-emerald-950/42 dark:text-white/40 sm:block">
+                  Pantau reservasi dan perjalanan setiap tamu
+                </p>
+              </div>
+            </div>
+            <div className="relative flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="grid size-10 place-items-center rounded-full border border-emerald-950/10 bg-white/72 transition hover:-translate-y-0.5 dark:border-white/10 dark:bg-white/6"
+                aria-label="Ubah tema gelap atau terang"
+              >
+                {theme === "dark" ? (
+                  <Sun className="size-4" />
+                ) : (
+                  <Moon className="size-4" />
+                )}
+              </button>
+              <Link
+                href="/admin/notifications"
+                className="relative grid size-10 place-items-center rounded-full border border-emerald-950/10 bg-white/72 transition hover:-translate-y-0.5 dark:border-white/10 dark:bg-white/6"
+                aria-label="Buka notifikasi admin"
+              >
+                <Bell className="size-4" />
+                <span className="absolute -right-0.5 -top-1 grid size-5 place-items-center rounded-full bg-amber-400 text-[0.58rem] font-bold text-emerald-950">
+                  5
+                </span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => setProfileOpen((current) => !current)}
+                className="ml-1 grid size-10 place-items-center rounded-full bg-emerald-950 text-xs font-bold text-white ring-2 ring-amber-300/60 dark:bg-emerald-700"
+                aria-label="Buka menu profil"
+                aria-expanded={profileOpen}
+              >
+                AP
+              </button>
+              <AnimatePresence>
+                {profileOpen ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -5, scale: 0.97 }}
+                    className="absolute right-0 top-12 w-60 rounded-2xl border border-emerald-950/8 bg-[#fffdf8] p-2 shadow-2xl dark:border-white/8 dark:bg-[#10231e]"
+                  >
+                    <div className="border-b border-emerald-950/7 px-3 py-2.5 dark:border-white/7">
+                      <p className="text-sm font-bold">Ayu Prameswari</p>
+                      <p className="mt-0.5 text-xs text-emerald-950/40 dark:text-white/38">
+                        Super Admin
+                      </p>
+                    </div>
+                    <Link
+                      href="/admin/settings"
+                      className="mt-1 flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm hover:bg-emerald-950/5 dark:hover:bg-white/6"
+                    >
+                      <UserRound className="size-4" /> Profil & pengaturan
+                    </Link>
+                    <Link
+                      href="/login"
+                      className="flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-300/8"
+                    >
+                      <LogOut className="size-4" /> Keluar
+                    </Link>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
+          </div>
+        </header>
+
+        <div className="mx-auto max-w-[1440px] px-4 pb-16 pt-7 sm:px-6 lg:px-8 lg:pt-10">
+          <motion.div
+            initial={
+              reduceMotion ? false : { opacity: 0, y: 18, filter: "blur(8px)" }
+            }
+            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+            className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"
+          >
+            <div>
+              <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-emerald-700 dark:bg-emerald-300/10 dark:text-emerald-200">
+                <Sparkles className="size-3.5" /> Reservation desk
+              </span>
+              <h1 className="mt-4 font-serif text-4xl font-semibold tracking-[-0.035em] sm:text-5xl">
+                Daftar booking
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-emerald-950/48 dark:text-white/46">
+                Kelola booking baru, kedatangan mendatang, status pembayaran,
+                dan kebutuhan tindak lanjut tamu.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={exportBookings}
+              className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-full border border-emerald-950/10 bg-white/72 px-5 text-sm font-bold transition hover:-translate-y-0.5 dark:border-white/10 dark:bg-white/6"
+            >
+              <Download className="size-4" /> Ekspor Excel
+            </button>
+          </motion.div>
+
+          <div className="mt-7 grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <Metric
+              label="Total booking"
+              value="156"
+              helper="Bulan berjalan"
+              icon={CalendarDays}
+              tone="emerald"
+            />
+            <Metric
+              label="Menunggu tindakan"
+              value={String(
+                bookings.filter((item) => item.status === "PENDING").length,
+              )}
+              helper="Perlu ditinjau"
+              icon={Clock3}
+              tone="amber"
+            />
+            <Metric
+              label="Check-in hari ini"
+              value="4"
+              helper="Tamu tiba"
+              icon={CalendarCheck2}
+              tone="sky"
+            />
+            <Metric
+              label="Nilai reservasi"
+              value="Rp842jt"
+              helper="Bulan berjalan"
+              icon={CircleDollarSign}
+              tone="rose"
+            />
+          </div>
+
+          <section className="mt-6 overflow-hidden rounded-[1.7rem] border border-emerald-950/8 bg-white/68 shadow-[0_20px_70px_rgba(4,34,28,0.055)] dark:border-white/8 dark:bg-white/[0.045]">
+            <div className="p-4 sm:p-5">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div className="relative w-full xl:max-w-md">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-emerald-950/35 dark:text-white/35" />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Cari kode, nama tamu, email, villa..."
+                    className="h-11 w-full rounded-xl border border-emerald-950/10 bg-white/74 pl-10 pr-4 text-sm outline-none focus:border-emerald-500/35 focus:ring-4 focus:ring-emerald-500/10 dark:border-white/10 dark:bg-white/6"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Filter
+                    value={status}
+                    label="Status booking"
+                    onChange={(value) => setStatus(value as typeof status)}
+                    options={[
+                      { value: "ALL", label: "Semua status" },
+                      ...Object.entries(statusMeta).map(([value, meta]) => ({
+                        value,
+                        label: meta.label,
+                      })),
+                    ]}
+                  />
+                  <Filter
+                    value={payment}
+                    label="Status pembayaran"
+                    onChange={(value) => setPayment(value as typeof payment)}
+                    options={[
+                      { value: "ALL", label: "Semua pembayaran" },
+                      ...Object.entries(paymentMeta).map(([value, meta]) => ({
+                        value,
+                        label: meta.label,
+                      })),
+                    ]}
+                  />
+                </div>
+              </div>
+              <div className="mt-4 flex items-center justify-between border-t border-emerald-950/7 pt-4 text-xs text-emerald-950/40 dark:border-white/7 dark:text-white/38">
+                <p>
+                  <strong className="text-emerald-700 dark:text-emerald-300">
+                    {visible.length}
+                  </strong>{" "}
+                  booking ditemukan
+                </p>
+                {query || status !== "ALL" || payment !== "ALL" ? (
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="inline-flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-300"
+                  >
+                    <X className="size-3.5" /> Reset filter
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="hidden overflow-x-auto border-t border-emerald-950/8 dark:border-white/8 md:block">
+              <table className="w-full min-w-[1050px] border-collapse">
+                <thead>
+                  <tr className="bg-emerald-950/[0.025] text-left text-[0.62rem] font-bold uppercase tracking-[0.14em] text-emerald-950/38 dark:bg-white/[0.025] dark:text-white/36">
+                    <th className="px-5 py-3.5">Booking & tamu</th>
+                    <th className="px-4 py-3.5">Villa</th>
+                    <th className="px-4 py-3.5">Periode</th>
+                    <th className="px-4 py-3.5">Status</th>
+                    <th className="px-4 py-3.5">Total</th>
+                    <th className="px-5 py-3.5 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((item, index) => (
+                    <BookingRow
+                      key={item.id}
+                      item={item}
+                      delay={reduceMotion ? 0 : index * 0.035}
+                      onView={() => setSelectedBooking(item)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="grid gap-3 border-t border-emerald-950/8 p-4 dark:border-white/8 md:hidden">
+              {visible.map((item) => (
+                <BookingCard
+                  key={item.id}
+                  item={item}
+                  onView={() => setSelectedBooking(item)}
+                />
+              ))}
+            </div>
+            {!visible.length ? (
+              <div className="grid min-h-72 place-items-center border-t border-emerald-950/8 p-6 text-center dark:border-white/8">
+                <div>
+                  <span className="mx-auto grid size-13 place-items-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-300/10 dark:text-emerald-200">
+                    <SlidersHorizontal className="size-5" />
+                  </span>
+                  <h2 className="mt-4 font-serif text-2xl font-semibold">
+                    Booking tidak ditemukan
+                  </h2>
+                  <p className="mt-2 text-sm text-emerald-950/44 dark:text-white/42">
+                    Ubah kata kunci atau filter pencarian.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="mt-4 rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-bold text-white"
+                  >
+                    Reset filter
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      </div>
+      <AnimatePresence>
+        {selectedBooking ? (
+          <BookingDetailModal
+            item={selectedBooking}
+            reduceMotion={Boolean(reduceMotion)}
+            onClose={() => setSelectedBooking(null)}
+            onExport={() => exportInvoice(selectedBooking)}
+          />
+        ) : null}
+      </AnimatePresence>
+    </main>
+  );
+}
+
+function BookingRow({
+  item,
+  delay,
+  onView,
+}: {
+  item: BookingItem;
+  delay: number;
+  onView: () => void;
+}) {
+  const status = statusMeta[item.status];
+  const Icon = status.icon;
+  return (
+    <motion.tr
+      initial={{ opacity: 0, y: 7 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay }}
+      className="border-t border-emerald-950/7 transition hover:bg-emerald-950/[0.018] dark:border-white/7 dark:hover:bg-white/[0.018]"
+    >
+      <td className="px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 dark:bg-emerald-300/10 dark:text-emerald-200">
+            {item.initials}
+          </span>
+          <div>
+            <p className="text-sm font-bold">{item.guest}</p>
+            <p className="mt-1 text-[0.65rem] text-emerald-950/40 dark:text-white/38">
+              {item.code} · {item.email}
+            </p>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <div className="flex items-center gap-2.5">
+          <img
+            src={item.image}
+            alt=""
+            className="size-10 rounded-xl object-cover"
+            loading="lazy"
+          />
+          <div>
+            <p className="max-w-44 truncate text-xs font-semibold">
+              {item.villa}
+            </p>
+            <p className="mt-1 text-[0.62rem] text-emerald-950/38 dark:text-white/36">
+              {item.guests} tamu
+            </p>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <p className="text-xs font-semibold">
+          {item.checkIn} – {item.checkOut}
+        </p>
+        <p className="mt-1 text-[0.62rem] text-emerald-950/38 dark:text-white/36">
+          {item.nights} malam · dibuat {item.createdAt}
+        </p>
+      </td>
+      <td className="px-4 py-4">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[0.58rem] font-bold uppercase tracking-[0.1em]",
+            status.className,
+          )}
+        >
+          <Icon className="size-3" />
+          {status.label}
+        </span>
+        <p
+          className={cn(
+            "mt-2 text-[0.65rem] font-bold",
+            paymentMeta[item.payment].className,
+          )}
+        >
+          {paymentMeta[item.payment].label}
+        </p>
+      </td>
+      <td className="px-4 py-4">
+        <p className="text-sm font-bold">{money.format(item.total)}</p>
+      </td>
+      <td className="px-5 py-4 text-right">
+        <button
+          type="button"
+          onClick={onView}
+          className="inline-flex size-9 items-center justify-center rounded-xl border border-emerald-950/8 text-emerald-700 transition hover:-translate-y-0.5 hover:bg-emerald-100 dark:border-white/8 dark:text-emerald-200 dark:hover:bg-emerald-300/10"
+          aria-label={`Lihat booking ${item.code}`}
+        >
+          <Eye className="size-4" />
+        </button>
+      </td>
+    </motion.tr>
+  );
+}
+
+function BookingCard({
+  item,
+  onView,
+}: {
+  item: BookingItem;
+  onView: () => void;
+}) {
+  const status = statusMeta[item.status];
+  return (
+    <article className="rounded-2xl border border-emerald-950/8 bg-white/55 p-4 dark:border-white/8 dark:bg-white/[0.025]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700 dark:bg-emerald-300/10 dark:text-emerald-200">
+            {item.initials}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold">{item.guest}</p>
+            <p className="mt-1 text-[0.62rem] text-emerald-950/40 dark:text-white/38">
+              {item.code}
+            </p>
+          </div>
+        </div>
+        <span
+          className={cn(
+            "rounded-full px-2.5 py-1 text-[0.55rem] font-bold uppercase",
+            status.className,
+          )}
+        >
+          {status.label}
+        </span>
+      </div>
+      <div className="mt-4 flex items-center gap-3 border-y border-emerald-950/7 py-3 dark:border-white/7">
+        <img
+          src={item.image}
+          alt=""
+          className="size-12 rounded-xl object-cover"
+        />
+        <div>
+          <p className="text-xs font-semibold">{item.villa}</p>
+          <p className="mt-1 text-[0.62rem] text-emerald-950/38 dark:text-white/36">
+            {item.checkIn} – {item.checkOut} · {item.nights} malam
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-bold">{money.format(item.total)}</p>
+          <p
+            className={cn(
+              "mt-1 text-[0.62rem] font-bold",
+              paymentMeta[item.payment].className,
+            )}
+          >
+            {paymentMeta[item.payment].label}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onView}
+          className="inline-flex min-h-9 items-center gap-2 rounded-full bg-emerald-700 px-4 text-xs font-bold text-white"
+        >
+          <Eye className="size-3.5" /> Detail
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function BookingDetailModal({
+  item,
+  reduceMotion,
+  onClose,
+  onExport,
+}: {
+  item: BookingItem;
+  reduceMotion: boolean;
+  onClose: () => void;
+  onExport: () => void;
+}) {
+  const status = statusMeta[item.status];
+  const StatusIcon = status.icon;
+  const subtotal = Math.round(item.total / 1.11);
+  const tax = item.total - subtotal;
+  return (
+    <motion.div
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-emerald-950/60 p-0 backdrop-blur-lg sm:items-center sm:p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onClose}
+    >
+      <motion.section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="booking-detail-title"
+        initial={reduceMotion ? false : { opacity: 0, y: 24, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={reduceMotion ? undefined : { opacity: 0, y: 18, scale: 0.98 }}
+        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-[#fffdf8] shadow-2xl dark:bg-[#0c1c18] sm:rounded-[2rem]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-emerald-950/8 bg-[#fffdf8]/92 p-5 backdrop-blur-xl dark:border-white/8 dark:bg-[#0c1c18]/92 sm:p-6">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.58rem] font-bold uppercase tracking-[0.1em]",
+                  status.className,
+                )}
+              >
+                <StatusIcon className="size-3" /> {status.label}
+              </span>
+              <span
+                className={cn(
+                  "text-xs font-bold",
+                  paymentMeta[item.payment].className,
+                )}
+              >
+                {paymentMeta[item.payment].label}
+              </span>
+            </div>
+            <h2
+              id="booking-detail-title"
+              className="mt-3 font-serif text-2xl font-semibold sm:text-3xl"
+            >
+              Detail booking
+            </h2>
+            <p className="mt-1 font-mono text-xs font-bold tracking-[0.08em] text-emerald-700 dark:text-emerald-300">
+              {item.code}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid size-10 place-items-center rounded-full bg-emerald-950/5 transition hover:rotate-90 dark:bg-white/7"
+            aria-label="Tutup detail booking"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="space-y-5">
+            <div className="overflow-hidden rounded-2xl border border-emerald-950/8 dark:border-white/8">
+              <img
+                src={item.image}
+                alt={item.villa}
+                className="h-40 w-full object-cover"
+              />
+              <div className="p-4">
+                <p className="font-serif text-xl font-semibold">{item.villa}</p>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <Detail label="Check-in" value={item.checkIn} />
+                  <Detail label="Check-out" value={item.checkOut} />
+                  <Detail label="Durasi" value={`${item.nights} malam`} />
+                  <Detail label="Tamu" value={`${item.guests} orang`} />
+                </div>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-emerald-950/8 bg-white/50 p-4 dark:border-white/8 dark:bg-white/[0.025]">
+              <p className="text-[0.62rem] font-bold uppercase tracking-[0.15em] text-emerald-700 dark:text-emerald-300">
+                Catatan tamu
+              </p>
+              <p className="mt-2 text-sm leading-6 text-emerald-950/55 dark:text-white/52">
+                Mohon siapkan airport transfer dan early check-in bila villa
+                sudah siap. Tamu merayakan perjalanan keluarga.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-5">
+            <div className="rounded-2xl bg-emerald-950 p-5 text-white">
+              <p className="text-[0.62rem] font-bold uppercase tracking-[0.15em] text-amber-200">
+                Informasi tamu
+              </p>
+              <div className="mt-4 flex items-center gap-3">
+                <span className="grid size-11 place-items-center rounded-full bg-white/10 text-sm font-bold">
+                  {item.initials}
+                </span>
+                <div>
+                  <p className="font-semibold">{item.guest}</p>
+                  <p className="mt-1 text-xs text-white/48">
+                    Tamu terverifikasi
+                  </p>
+                </div>
+              </div>
+              <div className="mt-4 space-y-2 border-t border-white/10 pt-4 text-xs">
+                <p className="flex items-center justify-between gap-3">
+                  <span className="text-white/45">Email</span>
+                  <span className="truncate font-semibold">{item.email}</span>
+                </p>
+                <p className="flex items-center justify-between">
+                  <span className="text-white/45">Telepon</span>
+                  <span className="font-semibold">+62 812 3456 7890</span>
+                </p>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-emerald-950/8 p-5 dark:border-white/8">
+              <p className="text-[0.62rem] font-bold uppercase tracking-[0.15em] text-emerald-700 dark:text-emerald-300">
+                Ringkasan pembayaran
+              </p>
+              <div className="mt-4 space-y-3 text-sm">
+                <PriceRow label={`${item.nights} malam`} value={subtotal} />
+                <PriceRow label="Pajak & layanan" value={tax} />
+                <div className="border-t border-emerald-950/8 pt-3 dark:border-white/8">
+                  <PriceRow
+                    label="Total pembayaran"
+                    value={item.total}
+                    strong
+                  />
+                </div>
+              </div>
+            </div>
+            <p className="text-xs leading-5 text-emerald-950/42 dark:text-white/40">
+              Booking dibuat {item.createdAt}. Perubahan status dan tindakan
+              operasional tersedia pada tahap kontrol booking berikutnya.
+            </p>
+          </div>
+        </div>
+        <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t border-emerald-950/8 bg-[#fffdf8]/92 p-4 backdrop-blur-xl dark:border-white/8 dark:bg-[#0c1c18]/92 sm:px-6">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-10 rounded-full border border-emerald-950/10 px-5 text-sm font-semibold dark:border-white/10"
+          >
+            Tutup
+          </button>
+          <button
+            type="button"
+            onClick={onExport}
+            className="inline-flex min-h-10 items-center gap-2 rounded-full border border-emerald-700/20 bg-emerald-100 px-5 text-sm font-bold text-emerald-800 dark:bg-emerald-300/10 dark:text-emerald-200"
+          >
+            <Download className="size-4" /> Unduh invoice PDF
+          </button>
+          <button
+            type="button"
+            className="min-h-10 rounded-full bg-emerald-700 px-5 text-sm font-bold text-white"
+          >
+            Tinjau booking
+          </button>
+        </div>
+      </motion.section>
+    </motion.div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[0.62rem] text-emerald-950/38 dark:text-white/36">
+        {label}
+      </p>
+      <p className="mt-1 text-xs font-bold">{value}</p>
+    </div>
+  );
+}
+
+function PriceRow({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span
+        className={cn(
+          "text-emerald-950/48 dark:text-white/46",
+          strong && "font-bold text-emerald-950 dark:text-white",
+        )}
+      >
+        {label}
+      </span>
+      <span
+        className={cn(
+          "font-semibold",
+          strong && "text-base text-emerald-700 dark:text-emerald-300",
+        )}
+      >
+        {money.format(value)}
+      </span>
+    </div>
+  );
+}
+
+function toInvoiceBooking(item: BookingItem): BookingStoreRecord {
+  const codeDate = item.code.match(/VLK-(\d{2})(\d{2})(\d{2})/);
+  const checkInDate = codeDate
+    ? new Date(
+        Number(`20${codeDate[1]}`),
+        Number(codeDate[2]) - 1,
+        Number(codeDate[3]),
+      )
+    : new Date();
+  const checkOutDate = new Date(checkInDate);
+  checkOutDate.setDate(checkOutDate.getDate() + item.nights);
+  const subtotal = Math.round(item.total / 1.11);
+  const taxTotal = item.total - subtotal;
+  const now = new Date().toISOString();
+  return {
+    id: item.id,
+    bookingCode: item.code,
+    villaId: item.villa.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    villaName: item.villa,
+    status: item.status === "CHECKED_IN" ? "CONFIRMED" : item.status,
+    paymentStatus: item.payment === "PENDING" ? "UNPAID" : item.payment,
+    checkIn: formatIsoDate(checkInDate),
+    checkOut: formatIsoDate(checkOutDate),
+    nights: item.nights,
+    guests: item.guests,
+    guest: {
+      name: item.guest,
+      email: item.email,
+      phone: "+62 812 3456 7890",
+    },
+    specialRequest:
+      "Mohon siapkan airport transfer dan early check-in bila tersedia.",
+    coupon: { code: null, status: "NOT_APPLIED", amount: 0 },
+    addOns: [],
+    lineItems: [
+      {
+        code: "VILLA",
+        type: "ACCOMMODATION",
+        label: `${item.villa} · ${item.nights} malam`,
+        amount: subtotal,
+      },
+      {
+        code: "TAX_SERVICE",
+        type: "TAX",
+        label: "Pajak & layanan",
+        amount: taxTotal,
+      },
+    ],
+    availabilityLocks: [],
+    amounts: {
+      subtotal,
+      extraGuestFee: 0,
+      addonTotal: 0,
+      discountTotal: 0,
+      serviceFee: 0,
+      taxTotal,
+      totalAmount: item.total,
+      depositAmount: item.total,
+      remainingAmount: item.payment === "PAID" ? 0 : item.total,
+      currency: "IDR",
+    },
+    expiresAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function formatIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function paymentProvider(status: PaymentStatus) {
+  if (status === "PAID") return "MIDTRANS";
+  if (status === "REFUNDED") return "REFUND";
+  return "MANUAL_TRANSFER";
+}
+
+function createExcelWorkbook(items: BookingItem[]) {
+  const headers = [
+    "Kode Booking",
+    "Nama Tamu",
+    "Email",
+    "Villa",
+    "Check-in",
+    "Check-out",
+    "Malam",
+    "Tamu",
+    "Status Booking",
+    "Status Pembayaran",
+    "Total (IDR)",
+    "Dibuat",
+  ];
+  const rows = items.map((item) => [
+    item.code,
+    item.guest,
+    item.email,
+    item.villa,
+    item.checkIn,
+    item.checkOut,
+    item.nights,
+    item.guests,
+    statusMeta[item.status].label,
+    paymentMeta[item.payment].label,
+    item.total,
+    item.createdAt,
+  ]);
+  const cell = (value: string | number, header = false) =>
+    `<Cell${header ? ' ss:StyleID="Header"' : ""}><Data ss:Type="${typeof value === "number" ? "Number" : "String"}">${escapeXml(String(value))}</Data></Cell>`;
+  return `<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Styles><Style ss:ID="Header"><Font ss:Bold="1" ss:Color="#FFFFFF"/><Interior ss:Color="#047857" ss:Pattern="Solid"/></Style></Styles>
+  <Worksheet ss:Name="Booking"><Table>
+    <Row>${headers.map((header) => cell(header, true)).join("")}</Row>
+    ${rows.map((row) => `<Row>${row.map((value) => cell(value)).join("")}</Row>`).join("\n")}
+  </Table></Worksheet>
+</Workbook>`;
+}
+
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function Metric({
+  label,
+  value,
+  helper,
+  icon: Icon,
+  tone,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  icon: typeof CalendarDays;
+  tone: "emerald" | "amber" | "sky" | "rose";
+}) {
+  const colors = {
+    emerald:
+      "bg-emerald-100 text-emerald-700 dark:bg-emerald-300/10 dark:text-emerald-200",
+    amber:
+      "bg-amber-100 text-amber-700 dark:bg-amber-300/10 dark:text-amber-200",
+    sky: "bg-sky-100 text-sky-700 dark:bg-sky-300/10 dark:text-sky-200",
+    rose: "bg-rose-100 text-rose-700 dark:bg-rose-300/10 dark:text-rose-200",
+  };
+  return (
+    <motion.div
+      whileHover={{ y: -3 }}
+      className="rounded-2xl border border-emerald-950/8 bg-white/66 p-4 dark:border-white/8 dark:bg-white/[0.045] sm:p-5"
+    >
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs font-semibold text-emerald-950/42 dark:text-white/40">
+            {label}
+          </p>
+          <p className="mt-2 text-2xl font-semibold sm:text-3xl">{value}</p>
+          <p className="mt-1 text-[0.65rem] text-emerald-950/36 dark:text-white/34">
+            {helper}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "grid size-10 place-items-center rounded-xl",
+            colors[tone],
+          )}
+        >
+          <Icon className="size-4" />
+        </span>
+      </div>
+    </motion.div>
+  );
+}
+
+function Filter({
+  value,
+  label,
+  options,
+  onChange,
+}: {
+  value: string;
+  label: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="relative">
+      <span className="sr-only">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-11 appearance-none rounded-xl border border-emerald-950/10 bg-white/72 pl-3 pr-9 text-xs font-semibold outline-none dark:border-white/10 dark:bg-[#12231f]"
+      >
+        <option disabled value="">
+          {label}
+        </option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 opacity-40" />
+    </label>
+  );
+}
+
+function Sidebar({
+  mobileOpen,
+  onClose,
+}: {
+  mobileOpen: boolean;
+  onClose: () => void;
+}) {
+  const content = (mobile = false) => (
+    <>
+      <Link href="/" className="flex items-center gap-3 px-2 py-2">
+        <span className="grid size-10 place-items-center rounded-xl bg-emerald-700 text-sm font-bold text-white">
+          V
+        </span>
+        <span>
+          <span className="block font-serif text-xl font-semibold leading-none">
+            Villaku
+          </span>
+          <span className="mt-1 block text-[0.58rem] font-bold uppercase tracking-[0.2em] opacity-40">
+            Admin operations
+          </span>
+        </span>
+      </Link>
+      <nav
+        className="mt-7 space-y-1"
+        aria-label={mobile ? "Navigasi admin mobile" : "Navigasi admin"}
+      >
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.label}
+              href={item.href}
+              onClick={mobile ? onClose : undefined}
+              className={cn(
+                "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-all",
+                item.active
+                  ? "bg-emerald-700 text-white shadow-[0_10px_24px_rgba(4,120,87,0.18)]"
+                  : "text-emerald-950/52 hover:bg-emerald-950/5 hover:text-emerald-950 dark:text-white/48 dark:hover:bg-white/6 dark:hover:text-white",
+              )}
+            >
+              <Icon className="size-4" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+      <div className="mt-auto rounded-2xl bg-emerald-950 p-4 text-white">
+        <div className="flex items-center gap-3">
+          <span className="grid size-9 place-items-center rounded-full bg-white/10 text-xs font-bold">
+            AP
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold">
+              Ayu Prameswari
+            </span>
+            <span className="mt-0.5 block text-[0.65rem] text-white/45">
+              Super Admin
+            </span>
+          </span>
+          <ChevronDown className="size-4 text-white/38" />
+        </div>
+      </div>
+    </>
+  );
+  return (
+    <>
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-emerald-950/8 bg-[#fbfaf5] p-4 dark:border-white/8 dark:bg-[#081714] lg:flex">
+        {content()}
+      </aside>
+      <AnimatePresence>
+        {mobileOpen ? (
+          <motion.div
+            className="fixed inset-0 z-50 bg-emerald-950/48 backdrop-blur-sm lg:hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          >
+            <motion.aside
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              className="relative flex h-full w-[min(19rem,86vw)] flex-col bg-[#fbfaf5] p-4 shadow-2xl dark:bg-[#081714]"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={onClose}
+                className="absolute right-4 top-4 grid size-9 place-items-center rounded-full bg-emerald-950/5 dark:bg-white/7"
+                aria-label="Tutup navigasi"
+              >
+                <X className="size-4" />
+              </button>
+              {content(true)}
+            </motion.aside>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </>
+  );
+}
