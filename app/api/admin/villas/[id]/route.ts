@@ -11,15 +11,19 @@ import {
   normalizeAdminVillaPayload,
   slugifyMasterData,
 } from "@/lib/admin-villa-validation";
-import { adminVillaInclude, serializePrismaVilla } from "@/lib/admin-villa-prisma";
+import {
+  adminVillaInclude,
+  serializePrismaVilla,
+} from "@/lib/admin-villa-prisma";
 import { prisma } from "@/lib/prisma";
 import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
+import { hasPermission } from "@/lib/rbac";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!isAdmin(request)) return forbidden();
+  if (!canView(request)) return forbidden();
   const { id } = await params;
 
   try {
@@ -28,7 +32,10 @@ export async function GET(
       include: adminVillaInclude,
     });
     if (!villa) return notFound();
-    return NextResponse.json({ villa: serializePrismaVilla(villa), meta: { source: "database" } });
+    return NextResponse.json({
+      villa: serializePrismaVilla(villa),
+      meta: { source: "database" },
+    });
   } catch (error) {
     if (!isPrismaDatabaseUnavailableError(error)) return serverError(error);
     const villa = getAdminVillaRecord(id);
@@ -41,39 +48,61 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!isAdmin(request)) return forbidden();
+  if (!canManage(request)) return forbidden();
   const { id } = await params;
   let body: unknown;
 
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ message: "Body request harus JSON valid." }, { status: 400 });
+    return NextResponse.json(
+      { message: "Body request harus JSON valid." },
+      { status: 400 },
+    );
   }
 
-  const parsed = adminVillaPatchSchema.safeParse(normalizeAdminVillaPayload(body));
+  const parsed = adminVillaPatchSchema.safeParse(
+    normalizeAdminVillaPayload(body),
+  );
   if (!parsed.success) {
     return NextResponse.json(
-      { message: "Perubahan villa tidak valid.", errors: parsed.error.flatten().fieldErrors },
+      {
+        message: "Perubahan villa tidak valid.",
+        errors: parsed.error.flatten().fieldErrors,
+      },
       { status: 400 },
     );
   }
   if (!Object.keys(parsed.data).length) {
-    return NextResponse.json({ message: "Tidak ada perubahan yang dikirim." }, { status: 400 });
+    return NextResponse.json(
+      { message: "Tidak ada perubahan yang dikirim." },
+      { status: 400 },
+    );
   }
 
   try {
-    const current = await prisma.villa.findFirst({ where: { OR: [{ id }, { slug: id }] } });
+    const current = await prisma.villa.findFirst({
+      where: { OR: [{ id }, { slug: id }] },
+    });
     if (!current) return notFound();
     const villa = await prisma.villa.update({
       where: { id: current.id },
       data: createUpdateData(parsed.data),
       include: adminVillaInclude,
     });
-    return NextResponse.json({ villa: serializePrismaVilla(villa), meta: { source: "database" } });
+    return NextResponse.json({
+      villa: serializePrismaVilla(villa),
+      meta: { source: "database" },
+    });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return NextResponse.json({ message: "Slug villa sudah digunakan." }, { status: 409 });
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        { message: "Slug villa sudah digunakan." },
+        { status: 409 },
+      );
     }
     if (!isPrismaDatabaseUnavailableError(error)) return serverError(error);
     const villa = updateAdminVillaRecord(id, toFallbackPatch(parsed.data));
@@ -86,7 +115,7 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!isAdmin(request)) return forbidden();
+  if (!canManage(request)) return forbidden();
   const { id } = await params;
 
   try {
@@ -101,11 +130,17 @@ export async function DELETE(
         where: { id: villa.id },
         data: { status: "ARCHIVED", isFeatured: false },
       });
-      return NextResponse.json({ message: "Villa diarsipkan karena memiliki riwayat booking.", mode: "archived" });
+      return NextResponse.json({
+        message: "Villa diarsipkan karena memiliki riwayat booking.",
+        mode: "archived",
+      });
     }
 
     await prisma.villa.delete({ where: { id: villa.id } });
-    return NextResponse.json({ message: "Villa berhasil dihapus.", mode: "deleted" });
+    return NextResponse.json({
+      message: "Villa berhasil dihapus.",
+      mode: "deleted",
+    });
   } catch (error) {
     if (!isPrismaDatabaseUnavailableError(error)) return serverError(error);
     if (!deleteAdminVillaRecord(id)) return notFound();
@@ -117,7 +152,9 @@ export async function DELETE(
   }
 }
 
-function createUpdateData(data: typeof adminVillaPatchSchema._output): Prisma.VillaUpdateInput {
+function createUpdateData(
+  data: typeof adminVillaPatchSchema._output,
+): Prisma.VillaUpdateInput {
   const update: Prisma.VillaUpdateInput = {};
   const scalarKeys = [
     "name",
@@ -184,7 +221,9 @@ function createUpdateData(data: typeof adminVillaPatchSchema._output): Prisma.Vi
   return update;
 }
 
-function toFallbackPatch(data: typeof adminVillaPatchSchema._output): Partial<AdminVillaMutation> {
+function toFallbackPatch(
+  data: typeof adminVillaPatchSchema._output,
+): Partial<AdminVillaMutation> {
   return {
     ...data,
     images: data.images?.map((image, index) => ({
@@ -199,9 +238,15 @@ function toFallbackPatch(data: typeof adminVillaPatchSchema._output): Partial<Ad
   };
 }
 
-function isAdmin(request: Request) {
-  const role = request.headers.get("x-user-role");
-  return role === "SUPER_ADMIN" || role === "ADMIN";
+function canView(request: Request) {
+  return hasPermission(request.headers.get("x-user-role") ?? "", "villas.view");
+}
+
+function canManage(request: Request) {
+  return hasPermission(
+    request.headers.get("x-user-role") ?? "",
+    "villas.manage",
+  );
 }
 
 function forbidden() {
@@ -209,10 +254,16 @@ function forbidden() {
 }
 
 function notFound() {
-  return NextResponse.json({ message: "Villa tidak ditemukan." }, { status: 404 });
+  return NextResponse.json(
+    { message: "Villa tidak ditemukan." },
+    { status: 404 },
+  );
 }
 
 function serverError(error: unknown) {
   console.error("Admin villa detail API error", error);
-  return NextResponse.json({ message: "Data villa belum dapat diproses." }, { status: 500 });
+  return NextResponse.json(
+    { message: "Data villa belum dapat diproses." },
+    { status: 500 },
+  );
 }

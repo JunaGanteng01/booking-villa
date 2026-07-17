@@ -1,32 +1,20 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
+import { NextResponse } from "next/server";
 import { z } from "zod";
+import { findMemoryAuthUser } from "@/lib/auth-memory-store";
+import { DEMO_ACCOUNTS } from "@/lib/demo-auth";
+import { prisma } from "@/lib/prisma";
+import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
 
 const loginSchema = z.object({
-  email: z.string().email("Format email tidak valid"),
+  email: z.string().trim().toLowerCase().email("Format email tidak valid"),
   password: z.string().min(1, "Password tidak boleh kosong"),
+  rememberMe: z.boolean().optional().default(true),
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_key_change_me_in_production";
-
-const demoAccounts = [
-  {
-    id: "demo-customer",
-    name: "Maya Putri",
-    email: "maya@villaku.test",
-    password: "VillaKu2026",
-    role: "CUSTOMER",
-  },
-  {
-    id: "demo-admin",
-    name: "Ayu Prameswari",
-    email: "admin@villaku.test",
-    password: "AdminVilla2026",
-    role: "ADMIN",
-  },
-] as const;
+const JWT_SECRET =
+  process.env.JWT_SECRET || "default_jwt_secret_key_change_me_in_production";
 
 type LoginUser = {
   id: string;
@@ -35,22 +23,20 @@ type LoginUser = {
   role: string;
 };
 
-async function createLoginResponse(user: LoginUser) {
+async function createLoginResponse(user: LoginUser, rememberMe: boolean) {
   const secret = new TextEncoder().encode(JWT_SECRET);
   const token = await new SignJWT({
     id: user.id,
+    name: user.name,
     email: user.email,
     role: user.role,
   })
     .setProtectedHeader({ alg: "HS256" })
-    .setExpirationTime("7d")
+    .setExpirationTime(rememberMe ? "7d" : "12h")
     .sign(secret);
 
   const response = NextResponse.json(
-    {
-      message: "Login berhasil",
-      user,
-    },
+    { message: "Login berhasil", user },
     { status: 200 },
   );
 
@@ -60,84 +46,114 @@ async function createLoginResponse(user: LoginUser) {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 7 * 24 * 60 * 60,
+    maxAge: rememberMe ? 7 * 24 * 60 * 60 : undefined,
     path: "/",
   });
 
   return response;
 }
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
+  let body: unknown;
   try {
-    const body = await req.json();
-    
-    const validationResult = loginSchema.safeParse(body);
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { message: "Input tidak valid", errors: validationResult.error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-    
-    const email = validationResult.data.email.trim().toLowerCase();
-    const { password } = validationResult.data;
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { message: "Body JSON tidak valid" },
+      { status: 400 },
+    );
+  }
 
-    const demoAuthEnabled = process.env.NODE_ENV !== "production" || process.env.DEMO_AUTH_ENABLED === "true";
-    const demoAccount = demoAccounts.find((account) => account.email === email);
+  const parsed = loginSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        message: "Input tidak valid",
+        errors: parsed.error.flatten().fieldErrors,
+      },
+      { status: 400 },
+    );
+  }
 
-    if (demoAuthEnabled && demoAccount) {
-      if (demoAccount.password !== password) {
-        return NextResponse.json({ message: "Email atau password salah" }, { status: 401 });
-      }
+  const { email, password, rememberMe } = parsed.data;
+  const demoAuthEnabled =
+    process.env.NODE_ENV !== "production" ||
+    process.env.DEMO_AUTH_ENABLED === "true";
+  const demoAccount = DEMO_ACCOUNTS.find(
+    (account) => account.email.toLowerCase() === email,
+  );
 
-      return createLoginResponse({
+  if (demoAuthEnabled && demoAccount) {
+    if (demoAccount.password !== password) return invalidCredentials();
+    return createLoginResponse(
+      {
         id: demoAccount.id,
         name: demoAccount.name,
         email: demoAccount.email,
         role: demoAccount.role,
-      });
-    }
-    
-    const user = await prisma.user.findUnique({
-      where: { email },
-    });
-    
-    if (!user || !user.passwordHash) {
+      },
+      rememberMe,
+    );
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user?.passwordHash) return invalidCredentials();
+    if (user.status !== "ACTIVE") {
       return NextResponse.json(
-        { message: "Email atau password salah" },
-        { status: 401 }
+        { message: "Akun Anda belum aktif atau sedang ditangguhkan" },
+        { status: 403 },
       );
     }
-    
-    // Check password
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-    
-    if (!isPasswordValid) {
-      return NextResponse.json(
-        { message: "Email atau password salah" },
-        { status: 401 }
-      );
-    }
-    
-    // Check if email is verified
     if (!user.emailVerified) {
       return NextResponse.json(
         { message: "Silakan verifikasi email Anda terlebih dahulu" },
-        { status: 403 }
+        { status: 403 },
       );
     }
-    
-    return createLoginResponse({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-    return NextResponse.json(
-      { message: "Terjadi kesalahan pada server" },
-      { status: 500 }
+    if (!(await bcrypt.compare(password, user.passwordHash))) {
+      return invalidCredentials();
+    }
+    return createLoginResponse(
+      {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      rememberMe,
     );
+  } catch (error) {
+    if (!isPrismaDatabaseUnavailableError(error)) {
+      console.error("Login error:", error);
+      return NextResponse.json(
+        { message: "Terjadi kesalahan pada server" },
+        { status: 500 },
+      );
+    }
   }
+
+  const memoryUser = findMemoryAuthUser(email);
+  if (
+    !memoryUser ||
+    !(await bcrypt.compare(password, memoryUser.passwordHash))
+  ) {
+    return invalidCredentials();
+  }
+  return createLoginResponse(
+    {
+      id: memoryUser.id,
+      name: memoryUser.name,
+      email: memoryUser.email,
+      role: memoryUser.role,
+    },
+    rememberMe,
+  );
+}
+
+function invalidCredentials() {
+  return NextResponse.json(
+    { message: "Email atau password salah" },
+    { status: 401 },
+  );
 }

@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdminPageShell } from "@/components/admin-page-shell";
 import { useAppNotifications } from "@/components/notification-root";
 import { cn } from "@/lib/utils";
@@ -142,12 +142,28 @@ export default function ReviewModerationPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"ALL" | ReviewStatus>("ALL");
   const [selected, setSelected] = useState<Review | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reviewId = params.get("review");
+    const requestedStatus = params.get("status") as ReviewStatus | null;
+    if (requestedStatus && requestedStatus in statusMeta) {
+      setFilter(requestedStatus);
+    }
+    if (!reviewId) return;
+    const match = initialReviews.find(
+      (review) => review.id.toLowerCase() === reviewId.toLowerCase(),
+    );
+    if (!match) return;
+    setSelected(match);
+    setQuery(match.id);
+  }, []);
   const visible = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return reviews.filter(
       (item) =>
         (!normalized ||
-          `${item.guest} ${item.villa} ${item.title} ${item.comment}`
+          `${item.id} ${item.guest} ${item.villa} ${item.title} ${item.comment}`
             .toLowerCase()
             .includes(normalized)) &&
         (filter === "ALL" || item.status === filter),

@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  CircleAlert,
   Eye,
   EyeOff,
   Loader2,
@@ -33,7 +34,10 @@ const registrationSchema = z
       .trim()
       .min(2, "Nama lengkap minimal 2 karakter.")
       .max(80, "Nama lengkap maksimal 80 karakter.")
-      .regex(/^[\p{L}\p{M}.' -]+$/u, "Nama hanya boleh berisi huruf dan tanda baca nama."),
+      .regex(
+        /^[\p{L}\p{M}.' -]+$/u,
+        "Nama hanya boleh berisi huruf dan tanda baca nama.",
+      ),
     email: z
       .string()
       .trim()
@@ -73,13 +77,18 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [registeredName, setRegisteredName] = useState<string | null>(null);
+  const [registeredAccount, setRegisteredAccount] = useState<{
+    name: string;
+    email: string;
+    verificationRequired: boolean;
+  } | null>(null);
 
   const {
     register,
     handleSubmit,
     watch,
     setError,
+    clearErrors,
     formState: { errors, isValid, touchedFields },
   } = useForm<RegistrationFormValues>({
     resolver: zodResolver(registrationSchema),
@@ -94,12 +103,18 @@ export default function RegisterPage() {
   });
 
   const password = watch("password");
-  const passwordStrength = useMemo(() => getPasswordStrength(password ?? ""), [password]);
+  const passwordStrength = useMemo(
+    () => getPasswordStrength(password ?? ""),
+    [password],
+  );
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("villaku-theme");
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const nextTheme = savedTheme === "dark" || (!savedTheme && prefersDark) ? "dark" : "light";
+    const prefersDark = window.matchMedia(
+      "(prefers-color-scheme: dark)",
+    ).matches;
+    const nextTheme =
+      savedTheme === "dark" || (!savedTheme && prefersDark) ? "dark" : "light";
 
     setTheme(nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
@@ -116,24 +131,50 @@ export default function RegisterPage() {
 
   const onSubmit = async (values: RegistrationFormValues) => {
     setIsSubmitting(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 900));
-
-    if (values.email.toLowerCase() === "maya@villaku.test") {
-      setError("email", {
-        type: "manual",
-        message: "Email ini sudah terdaftar. Silakan masuk ke akun Anda.",
+    clearErrors("root.server");
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: values.name.trim(),
+          email: values.email.trim().toLowerCase(),
+          password: values.password,
+        }),
       });
-      setIsSubmitting(false);
-      return;
-    }
+      const payload = (await response.json().catch(() => null)) as {
+        message?: string;
+        verificationRequired?: boolean;
+        user?: { name?: string | null; email: string; role: string };
+      } | null;
 
-    const firstName = values.name.trim().split(/\s+/)[0] || "Tamu";
-    window.localStorage.setItem(
-      "villaku-registration-preview",
-      JSON.stringify({ name: values.name.trim(), email: values.email.trim(), createdAt: new Date().toISOString() }),
-    );
-    setRegisteredName(firstName);
-    setIsSubmitting(false);
+      if (!response.ok || !payload?.user) {
+        if (response.status === 409) {
+          setError("email", {
+            type: "server",
+            message: "Email ini sudah terdaftar. Silakan masuk ke akun Anda.",
+          });
+          return;
+        }
+        throw new Error(payload?.message || "Akun belum dapat dibuat.");
+      }
+
+      setRegisteredAccount({
+        name: payload.user.name || values.name.trim(),
+        email: payload.user.email,
+        verificationRequired: Boolean(payload.verificationRequired),
+      });
+    } catch (error) {
+      setError("root.server", {
+        type: "server",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Akun belum dapat dibuat. Silakan coba lagi.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -144,7 +185,11 @@ export default function RegisterPage() {
       />
 
       <header className="relative z-30 flex items-center justify-between px-4 py-4 sm:px-6 lg:absolute lg:inset-x-0 lg:top-0 lg:px-8">
-        <Link href="/" className="group flex items-center gap-3" aria-label="Kembali ke beranda VillaKu">
+        <Link
+          href="/"
+          className="group flex items-center gap-3"
+          aria-label="Kembali ke beranda VillaKu"
+        >
           <span className="grid size-10 place-items-center rounded-full bg-emerald-700 text-sm font-bold text-white shadow-[0_10px_28px_rgba(4,120,87,0.24)] transition-transform group-hover:rotate-6 group-hover:scale-105">
             V
           </span>
@@ -171,7 +216,11 @@ export default function RegisterPage() {
             className="grid size-10 place-items-center rounded-full border border-emerald-950/10 bg-white/68 text-emerald-950 shadow-sm backdrop-blur-xl transition-transform hover:-translate-y-0.5 dark:border-white/10 dark:bg-white/8 dark:text-white lg:border-white/18 lg:bg-white/12 lg:text-white"
             aria-label="Ubah tema gelap atau terang"
           >
-            {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            {theme === "dark" ? (
+              <Sun className="size-4" />
+            ) : (
+              <Moon className="size-4" />
+            )}
           </button>
         </div>
       </header>
@@ -187,27 +236,50 @@ export default function RegisterPage() {
             transition={{ duration: 1.8, ease: [0.22, 1, 0.36, 1] }}
           />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,32,26,0.25),rgba(3,32,26,0.9)),linear-gradient(90deg,rgba(3,32,26,0.18),transparent)]" />
-          <div aria-hidden className="absolute -bottom-24 -left-20 size-96 rounded-full bg-emerald-400/16 blur-3xl" />
-          <div aria-hidden className="absolute right-8 top-32 size-52 rounded-full bg-amber-300/13 blur-3xl" />
+          <div
+            aria-hidden
+            className="absolute -bottom-24 -left-20 size-96 rounded-full bg-emerald-400/16 blur-3xl"
+          />
+          <div
+            aria-hidden
+            className="absolute right-8 top-32 size-52 rounded-full bg-amber-300/13 blur-3xl"
+          />
 
           <motion.div
             initial={shouldReduceMotion ? false : "hidden"}
             animate="visible"
-            variants={{ visible: { transition: { staggerChildren: 0.1, delayChildren: 0.2 } } }}
+            variants={{
+              visible: {
+                transition: { staggerChildren: 0.1, delayChildren: 0.2 },
+              },
+            }}
             className="relative flex min-h-screen flex-col justify-end p-10 xl:p-14"
           >
-            <motion.div variants={reveal} className="inline-flex w-fit items-center gap-2 rounded-full border border-white/16 bg-white/9 px-4 py-2 text-[0.68rem] font-bold uppercase tracking-[0.2em] text-amber-200 backdrop-blur-xl">
+            <motion.div
+              variants={reveal}
+              className="inline-flex w-fit items-center gap-2 rounded-full border border-white/16 bg-white/9 px-4 py-2 text-[0.68rem] font-bold uppercase tracking-[0.2em] text-amber-200 backdrop-blur-xl"
+            >
               <Sparkles className="size-4" /> VillaKu Guest Circle
             </motion.div>
-            <motion.h1 variants={reveal} className="mt-7 max-w-2xl font-serif text-5xl font-semibold leading-[0.96] tracking-[-0.045em] xl:text-6xl">
+            <motion.h1
+              variants={reveal}
+              className="mt-7 max-w-2xl font-serif text-5xl font-semibold leading-[0.96] tracking-[-0.045em] xl:text-6xl"
+            >
               Perjalanan terbaik dimulai dari ruang milik Anda.
             </motion.h1>
-            <motion.p variants={reveal} className="mt-5 max-w-xl text-base leading-7 text-white/62">
-              Buat akun gratis untuk menyimpan inspirasi, mengelola reservasi, dan menikmati pengalaman menginap yang terasa lebih personal.
+            <motion.p
+              variants={reveal}
+              className="mt-5 max-w-xl text-base leading-7 text-white/62"
+            >
+              Buat akun gratis untuk menyimpan inspirasi, mengelola reservasi,
+              dan menikmati pengalaman menginap yang terasa lebih personal.
             </motion.p>
             <motion.ul variants={reveal} className="mt-8 grid gap-3">
               {benefits.map((benefit) => (
-                <li key={benefit} className="flex items-center gap-3 text-sm text-white/76">
+                <li
+                  key={benefit}
+                  className="flex items-center gap-3 text-sm text-white/76"
+                >
                   <span className="grid size-7 shrink-0 place-items-center rounded-full bg-emerald-300/16 text-emerald-200 ring-1 ring-emerald-200/18">
                     <Check className="size-3.5" />
                   </span>
@@ -215,14 +287,23 @@ export default function RegisterPage() {
                 </li>
               ))}
             </motion.ul>
-            <motion.div variants={reveal} className="mt-10 flex items-center gap-4 border-t border-white/12 pt-7">
+            <motion.div
+              variants={reveal}
+              className="mt-10 flex items-center gap-4 border-t border-white/12 pt-7"
+            >
               <div className="flex -space-x-2">
                 {[
                   "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=80",
                   "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80",
                   "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80",
                 ].map((image) => (
-                  <img key={image} src={image} alt="" className="size-9 rounded-full border-2 border-emerald-950 object-cover" loading="lazy" />
+                  <img
+                    key={image}
+                    src={image}
+                    alt=""
+                    className="size-9 rounded-full border-2 border-emerald-950 object-cover"
+                    loading="lazy"
+                  />
                 ))}
               </div>
               <div>
@@ -231,7 +312,9 @@ export default function RegisterPage() {
                     <Star key={index} className="size-3.5 fill-current" />
                   ))}
                 </div>
-                <p className="mt-1 text-xs text-white/48">Dipercaya 12.800+ guest nights</p>
+                <p className="mt-1 text-xs text-white/48">
+                  Dipercaya 12.800+ guest nights
+                </p>
               </div>
             </motion.div>
           </motion.div>
@@ -240,14 +323,26 @@ export default function RegisterPage() {
         <section className="flex items-center justify-center px-4 py-8 sm:px-8 sm:py-12 lg:px-12 lg:pb-12 lg:pt-24 xl:px-20">
           <div className="w-full max-w-xl">
             <AnimatePresence mode="wait">
-              {registeredName ? (
-                <RegistrationSuccess key="success" name={registeredName} shouldReduceMotion={Boolean(shouldReduceMotion)} />
+              {registeredAccount ? (
+                <RegistrationSuccess
+                  key="success"
+                  account={registeredAccount}
+                  shouldReduceMotion={Boolean(shouldReduceMotion)}
+                />
               ) : (
                 <motion.div
                   key="form"
-                  initial={shouldReduceMotion ? false : { opacity: 0, y: 18, filter: "blur(8px)" }}
+                  initial={
+                    shouldReduceMotion
+                      ? false
+                      : { opacity: 0, y: 18, filter: "blur(8px)" }
+                  }
                   animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                  exit={shouldReduceMotion ? undefined : { opacity: 0, y: -14, filter: "blur(8px)" }}
+                  exit={
+                    shouldReduceMotion
+                      ? undefined
+                      : { opacity: 0, y: -14, filter: "blur(8px)" }
+                  }
                   transition={{ duration: 0.45, ease: "easeOut" }}
                 >
                   <div className="lg:hidden">
@@ -255,18 +350,27 @@ export default function RegisterPage() {
                       <Sparkles className="size-3.5" /> VillaKu Guest Circle
                     </span>
                   </div>
-                  <p className="mt-5 text-xs font-bold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300 lg:mt-0">Buat akun baru</p>
+                  <p className="mt-5 text-xs font-bold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300 lg:mt-0">
+                    Buat akun baru
+                  </p>
                   <h1 className="mt-3 font-serif text-4xl font-semibold leading-none tracking-[-0.045em] text-emerald-950 dark:text-white sm:text-5xl">
                     Mulai perjalanan Anda.
                   </h1>
                   <p className="mt-4 text-sm leading-6 text-emerald-950/52 dark:text-white/50 sm:text-base">
                     Sudah menjadi anggota?{" "}
-                    <Link href="/login" className="font-semibold text-emerald-700 underline decoration-emerald-700/20 underline-offset-4 transition-colors hover:text-emerald-900 dark:text-emerald-300 dark:hover:text-emerald-200">
+                    <Link
+                      href="/login"
+                      className="font-semibold text-emerald-700 underline decoration-emerald-700/20 underline-offset-4 transition-colors hover:text-emerald-900 dark:text-emerald-300 dark:hover:text-emerald-200"
+                    >
                       Masuk di sini
                     </Link>
                   </p>
 
-                  <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-8 space-y-5">
+                  <form
+                    onSubmit={handleSubmit(onSubmit)}
+                    noValidate
+                    className="mt-8 space-y-5"
+                  >
                     <FormField
                       id="name"
                       label="Nama lengkap"
@@ -297,20 +401,35 @@ export default function RegisterPage() {
                         autoComplete="new-password"
                         icon={LockKeyhole}
                         error={errors.password?.message}
-                        valid={Boolean(touchedFields.password && !errors.password)}
+                        valid={Boolean(
+                          touchedFields.password && !errors.password,
+                        )}
                         registration={register("password")}
                         trailing={
                           <button
                             type="button"
-                            onClick={() => setShowPassword((visible) => !visible)}
+                            onClick={() =>
+                              setShowPassword((visible) => !visible)
+                            }
                             className="grid size-9 place-items-center rounded-full text-emerald-950/36 transition-colors hover:bg-emerald-950/5 hover:text-emerald-950 dark:text-white/34 dark:hover:bg-white/7 dark:hover:text-white"
-                            aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+                            aria-label={
+                              showPassword
+                                ? "Sembunyikan password"
+                                : "Tampilkan password"
+                            }
                           >
-                            {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                            {showPassword ? (
+                              <EyeOff className="size-4" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}
                           </button>
                         }
                       />
-                      <PasswordMeter password={password ?? ""} strength={passwordStrength} />
+                      <PasswordMeter
+                        password={password ?? ""}
+                        strength={passwordStrength}
+                      />
                     </div>
                     <FormField
                       id="confirmPassword"
@@ -320,16 +439,29 @@ export default function RegisterPage() {
                       autoComplete="new-password"
                       icon={ShieldCheck}
                       error={errors.confirmPassword?.message}
-                      valid={Boolean(touchedFields.confirmPassword && !errors.confirmPassword)}
+                      valid={Boolean(
+                        touchedFields.confirmPassword &&
+                        !errors.confirmPassword,
+                      )}
                       registration={register("confirmPassword")}
                       trailing={
                         <button
                           type="button"
-                          onClick={() => setShowConfirmPassword((visible) => !visible)}
+                          onClick={() =>
+                            setShowConfirmPassword((visible) => !visible)
+                          }
                           className="grid size-9 place-items-center rounded-full text-emerald-950/36 transition-colors hover:bg-emerald-950/5 hover:text-emerald-950 dark:text-white/34 dark:hover:bg-white/7 dark:hover:text-white"
-                          aria-label={showConfirmPassword ? "Sembunyikan konfirmasi password" : "Tampilkan konfirmasi password"}
+                          aria-label={
+                            showConfirmPassword
+                              ? "Sembunyikan konfirmasi password"
+                              : "Tampilkan konfirmasi password"
+                          }
                         >
-                          {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                          {showConfirmPassword ? (
+                            <EyeOff className="size-4" />
+                          ) : (
+                            <Eye className="size-4" />
+                          )}
                         </button>
                       }
                     />
@@ -340,16 +472,24 @@ export default function RegisterPage() {
                           type="checkbox"
                           className="mt-1 size-4 shrink-0 rounded border-emerald-950/20 accent-emerald-700"
                           aria-invalid={Boolean(errors.acceptTerms)}
-                          aria-describedby={errors.acceptTerms ? "acceptTerms-error" : undefined}
+                          aria-describedby={
+                            errors.acceptTerms ? "acceptTerms-error" : undefined
+                          }
                           {...register("acceptTerms")}
                         />
                         <span>
                           Saya menyetujui{" "}
-                          <button type="button" className="font-semibold text-emerald-700 underline decoration-emerald-700/20 underline-offset-4 dark:text-emerald-300">
+                          <button
+                            type="button"
+                            className="font-semibold text-emerald-700 underline decoration-emerald-700/20 underline-offset-4 dark:text-emerald-300"
+                          >
                             Syarat Layanan
                           </button>{" "}
                           dan{" "}
-                          <button type="button" className="font-semibold text-emerald-700 underline decoration-emerald-700/20 underline-offset-4 dark:text-emerald-300">
+                          <button
+                            type="button"
+                            className="font-semibold text-emerald-700 underline decoration-emerald-700/20 underline-offset-4 dark:text-emerald-300"
+                          >
                             Kebijakan Privasi
                           </button>
                           .
@@ -365,13 +505,40 @@ export default function RegisterPage() {
                             className="mt-2 flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-300"
                             role="alert"
                           >
-                            <span className="size-1.5 rounded-full bg-current" /> {errors.acceptTerms.message}
+                            <span className="size-1.5 rounded-full bg-current" />{" "}
+                            {errors.acceptTerms.message}
                           </motion.p>
                         ) : null}
                       </AnimatePresence>
                     </div>
 
-                    <Button type="submit" size="lg" variant="gold" className="w-full" disabled={isSubmitting || !isValid}>
+                    <AnimatePresence initial={false}>
+                      {errors.root?.server ? (
+                        <motion.div
+                          initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                          className="flex items-start gap-3 rounded-2xl border border-red-500/18 bg-red-500/8 p-4 text-sm text-red-700 dark:border-red-300/16 dark:bg-red-300/7 dark:text-red-200"
+                          role="alert"
+                        >
+                          <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                          <div>
+                            <p className="font-semibold">Registrasi gagal</p>
+                            <p className="mt-1 text-xs leading-5 opacity-78">
+                              {errors.root.server.message}
+                            </p>
+                          </div>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+
+                    <Button
+                      type="submit"
+                      size="lg"
+                      variant="gold"
+                      className="w-full"
+                      disabled={isSubmitting || !isValid}
+                    >
                       {isSubmitting ? (
                         <>
                           <Loader2 className="animate-spin" /> Menyiapkan akun…
@@ -392,7 +559,8 @@ export default function RegisterPage() {
                   <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-950/8 bg-white/38 p-4 text-xs leading-5 text-emerald-950/42 dark:border-white/8 dark:bg-white/4 dark:text-white/40">
                     <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
                     <p>
-                      Ini adalah frontend dengan data tiruan. Password tidak dikirim ke server dan autentikasi aman akan dihubungkan pada tahap backend.
+                      Registrasi selalu membuat role User. Role operasional
+                      hanya dapat diberikan oleh administrator.
                     </p>
                   </div>
                 </motion.div>
@@ -414,7 +582,9 @@ type FormFieldProps = {
   type?: string;
   error?: string;
   valid?: boolean;
-  registration: ReturnType<ReturnType<typeof useForm<RegistrationFormValues>>["register"]>;
+  registration: ReturnType<
+    ReturnType<typeof useForm<RegistrationFormValues>>["register"]
+  >;
   trailing?: React.ReactNode;
 };
 
@@ -431,7 +601,10 @@ function FormField({
   trailing,
 }: FormFieldProps) {
   return (
-    <label htmlFor={id} className="grid gap-2 text-xs font-semibold text-emerald-950/62 dark:text-white/60">
+    <label
+      htmlFor={id}
+      className="grid gap-2 text-xs font-semibold text-emerald-950/62 dark:text-white/60"
+    >
       {label}
       <span
         className={cn(
@@ -441,7 +614,14 @@ function FormField({
             : "border-emerald-950/10 focus-within:border-emerald-600/32 focus-within:ring-emerald-500/8 dark:border-white/10 dark:focus-within:border-emerald-300/30",
         )}
       >
-        <Icon className={cn("size-[1.05rem] shrink-0", error ? "text-red-500 dark:text-red-300" : "text-emerald-700/64 dark:text-emerald-300/62")} />
+        <Icon
+          className={cn(
+            "size-[1.05rem] shrink-0",
+            error
+              ? "text-red-500 dark:text-red-300"
+              : "text-emerald-700/64 dark:text-emerald-300/62",
+          )}
+        />
         <input
           id={id}
           type={type}
@@ -452,7 +632,10 @@ function FormField({
           className="h-full min-w-0 flex-1 bg-transparent text-sm font-normal text-emerald-950 outline-none placeholder:text-emerald-950/28 dark:text-white dark:placeholder:text-white/26"
           {...registration}
         />
-        {trailing ?? (valid ? <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-300" /> : null)}
+        {trailing ??
+          (valid ? (
+            <CheckCircle2 className="size-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
+          ) : null)}
       </span>
       <AnimatePresence initial={false}>
         {error ? (
@@ -472,7 +655,13 @@ function FormField({
   );
 }
 
-function PasswordMeter({ password, strength }: { password: string; strength: ReturnType<typeof getPasswordStrength> }) {
+function PasswordMeter({
+  password,
+  strength,
+}: {
+  password: string;
+  strength: ReturnType<typeof getPasswordStrength>;
+}) {
   const checks = [
     { label: "8+ karakter", valid: password.length >= 8 },
     { label: "Huruf kapital", valid: /[A-Z]/.test(password) },
@@ -488,17 +677,40 @@ function PasswordMeter({ password, strength }: { password: string; strength: Ret
               key={index}
               className={cn(
                 "h-1 rounded-full transition-colors",
-                index < strength.score ? strength.barClass : "bg-emerald-950/8 dark:bg-white/8",
+                index < strength.score
+                  ? strength.barClass
+                  : "bg-emerald-950/8 dark:bg-white/8",
               )}
             />
           ))}
         </div>
-        <span className={cn("w-16 text-right text-[0.66rem] font-bold", strength.textClass)}>{password ? strength.label : "Belum ada"}</span>
+        <span
+          className={cn(
+            "w-16 text-right text-[0.66rem] font-bold",
+            strength.textClass,
+          )}
+        >
+          {password ? strength.label : "Belum ada"}
+        </span>
       </div>
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5">
         {checks.map((check) => (
-          <span key={check.label} className={cn("flex items-center gap-1 text-[0.65rem]", check.valid ? "text-emerald-700 dark:text-emerald-300" : "text-emerald-950/34 dark:text-white/32")}>
-            <Check className={cn("size-3", check.valid ? "opacity-100" : "opacity-35")} /> {check.label}
+          <span
+            key={check.label}
+            className={cn(
+              "flex items-center gap-1 text-[0.65rem]",
+              check.valid
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-emerald-950/34 dark:text-white/32",
+            )}
+          >
+            <Check
+              className={cn(
+                "size-3",
+                check.valid ? "opacity-100" : "opacity-35",
+              )}
+            />{" "}
+            {check.label}
           </span>
         ))}
       </div>
@@ -506,36 +718,61 @@ function PasswordMeter({ password, strength }: { password: string; strength: Ret
   );
 }
 
-function RegistrationSuccess({ name, shouldReduceMotion }: { name: string; shouldReduceMotion: boolean }) {
+function RegistrationSuccess({
+  account,
+  shouldReduceMotion,
+}: {
+  account: { name: string; email: string; verificationRequired: boolean };
+  shouldReduceMotion: boolean;
+}) {
+  const firstName = account.name.trim().split(/\s+/)[0] || "Tamu";
   return (
     <motion.div
-      initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.96, filter: "blur(10px)" }}
+      initial={
+        shouldReduceMotion
+          ? false
+          : { opacity: 0, scale: 0.96, filter: "blur(10px)" }
+      }
       animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
       className="rounded-[2rem] border border-emerald-950/10 bg-white/58 p-6 text-center shadow-[0_24px_80px_rgba(4,34,28,0.08)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/5 sm:p-10"
     >
       <motion.div
         initial={shouldReduceMotion ? false : { scale: 0, rotate: -16 }}
         animate={{ scale: 1, rotate: 0 }}
-        transition={{ type: "spring", damping: 16, stiffness: 210, delay: 0.12 }}
+        transition={{
+          type: "spring",
+          damping: 16,
+          stiffness: 210,
+          delay: 0.12,
+        }}
         className="mx-auto grid size-20 place-items-center rounded-full bg-emerald-700 text-white shadow-[0_18px_48px_rgba(4,120,87,0.28)] ring-8 ring-emerald-600/8"
       >
         <Check className="size-9" strokeWidth={2.4} />
       </motion.div>
-      <p className="mt-7 text-xs font-bold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300">Akun berhasil dibuat</p>
-      <h1 className="mt-3 font-serif text-4xl font-semibold tracking-[-0.04em] text-emerald-950 dark:text-white sm:text-5xl">Selamat datang, {name}.</h1>
+      <p className="mt-7 text-xs font-bold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300">
+        Akun berhasil dibuat
+      </p>
+      <h1 className="mt-3 font-serif text-4xl font-semibold tracking-[-0.04em] text-emerald-950 dark:text-white sm:text-5xl">
+        Selamat datang, {firstName}.
+      </h1>
       <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-emerald-950/52 dark:text-white/50">
-        Akun pratinjau Anda siap. Jelajahi dashboard untuk melihat contoh riwayat booking, profil, dan wishlist pribadi.
+        {account.verificationRequired
+          ? `Tautan verifikasi telah disiapkan untuk ${account.email}. Verifikasi email sebelum masuk.`
+          : `Akun User ${account.email} sudah aktif dan dapat digunakan untuk login.`}
       </p>
       <div className="mt-7 grid gap-3 sm:grid-cols-2">
         <Button asChild size="lg" variant="gold">
-          <Link href="/dashboard">Buka dashboard <ArrowRight /></Link>
+          <Link href="/login">
+            Masuk sekarang <ArrowRight />
+          </Link>
         </Button>
         <Button asChild size="lg" variant="outline">
           <Link href="/villas">Cari villa</Link>
         </Button>
       </div>
       <p className="mt-6 flex items-center justify-center gap-2 text-xs text-emerald-950/38 dark:text-white/36">
-        <ShieldCheck className="size-4 text-emerald-700 dark:text-emerald-300" /> Email verifikasi tiruan telah disiapkan.
+        <ShieldCheck className="size-4 text-emerald-700 dark:text-emerald-300" />{" "}
+        Role akun: User
       </p>
     </motion.div>
   );
@@ -549,13 +786,33 @@ function getPasswordStrength(password: string) {
   if (/[^A-Za-z0-9]/.test(password) && password.length >= 10) score += 1;
 
   if (score <= 1) {
-    return { score, label: "Lemah", barClass: "bg-red-500", textClass: "text-red-600 dark:text-red-300" };
+    return {
+      score,
+      label: "Lemah",
+      barClass: "bg-red-500",
+      textClass: "text-red-600 dark:text-red-300",
+    };
   }
   if (score === 2) {
-    return { score, label: "Cukup", barClass: "bg-amber-400", textClass: "text-amber-700 dark:text-amber-200" };
+    return {
+      score,
+      label: "Cukup",
+      barClass: "bg-amber-400",
+      textClass: "text-amber-700 dark:text-amber-200",
+    };
   }
   if (score === 3) {
-    return { score, label: "Kuat", barClass: "bg-emerald-500", textClass: "text-emerald-700 dark:text-emerald-300" };
+    return {
+      score,
+      label: "Kuat",
+      barClass: "bg-emerald-500",
+      textClass: "text-emerald-700 dark:text-emerald-300",
+    };
   }
-  return { score, label: "Sangat kuat", barClass: "bg-emerald-600", textClass: "text-emerald-700 dark:text-emerald-300" };
+  return {
+    score,
+    label: "Sangat kuat",
+    barClass: "bg-emerald-600",
+    textClass: "text-emerald-700 dark:text-emerald-300",
+  };
 }

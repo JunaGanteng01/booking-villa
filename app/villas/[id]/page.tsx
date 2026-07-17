@@ -12,6 +12,7 @@ import {
   Gift,
   Heart,
   Home,
+  Loader2,
   Mail,
   Minus,
   MapPin,
@@ -30,9 +31,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { RatingStars } from "@/components/rating-stars";
 import { Button } from "@/components/ui/button";
+import { useAuthSession } from "@/components/use-auth-session";
 import { bookingDraftStorageKey } from "@/lib/booking-draft";
 import { cn } from "@/lib/utils";
 import { formatRupiah, getVillaById } from "@/lib/villa-data";
@@ -205,6 +207,7 @@ const promoCatalog: PromoRule[] = [
 export default function VillaDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { profile } = useAuthSession();
   const rawId = params?.id;
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const villa = id ? getVillaById(id) : undefined;
@@ -215,12 +218,13 @@ export default function VillaDetailPage() {
   const [checkIn, setCheckIn] = useState("2026-08-16");
   const [checkOut, setCheckOut] = useState("2026-08-19");
   const [guests, setGuests] = useState(() => (villa ? Math.min(2, villa.guests) : 1));
-  const [guestName, setGuestName] = useState("Maya Putri");
-  const [guestEmail, setGuestEmail] = useState("maya@example.com");
-  const [guestPhone, setGuestPhone] = useState("+62 812 3456 7890");
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+  const [guestPhone, setGuestPhone] = useState("");
   const [promoCode, setPromoCode] = useState("VILLAKU10");
   const [selectedAddOns, setSelectedAddOns] = useState<string[]>(["airport-pickup"]);
   const [toast, setToast] = useState("");
+  const [isCheckingSession, setIsCheckingSession] = useState(false);
   const guestCapacity = Math.max(1, villa?.guests ?? 1);
   const guestOptions = useMemo(
     () => Array.from({ length: guestCapacity }, (_, index) => index + 1),
@@ -230,6 +234,12 @@ export default function VillaDetailPage() {
     100,
     Math.round((Math.min(guests, guestCapacity) / guestCapacity) * 100),
   );
+
+  useEffect(() => {
+    if (!profile) return;
+    setGuestName((current) => current || profile.name);
+    setGuestEmail((current) => current || profile.email);
+  }, [profile]);
 
   const pricing = useMemo(() => {
     if (!villa) {
@@ -418,11 +428,13 @@ export default function VillaDetailPage() {
 
   const canSubmitBooking = bookingValidation.isValid;
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canSubmitBooking) {
+    if (!canSubmitBooking || isCheckingSession) {
       const firstInvalid = bookingValidation.invalidItems[0];
-      showToast(firstInvalid?.message ?? "Lengkapi input booking sebelum lanjut.", 3200);
+      if (firstInvalid) {
+        showToast(firstInvalid.message, 3200);
+      }
       return;
     }
 
@@ -471,12 +483,38 @@ export default function VillaDetailPage() {
       },
     };
 
-    window.sessionStorage.setItem(bookingDraftStorageKey, JSON.stringify(bookingDraft));
-    showToast(
-      `Booking draft untuk ${guestName || "tamu"} (${guests} tamu) tersimpan. Membuka ringkasan pesanan...`,
-      3600,
-    );
-    window.setTimeout(() => router.push("/booking/summary"), 520);
+    setIsCheckingSession(true);
+
+    try {
+      const sessionResponse = await fetch("/api/auth/session", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+
+      window.sessionStorage.setItem(bookingDraftStorageKey, JSON.stringify(bookingDraft));
+
+      if (sessionResponse.status === 401) {
+        showToast("Silakan login terlebih dahulu. Data pesanan Anda tetap tersimpan.", 3600);
+        window.setTimeout(() => {
+          router.push(`/login?callbackUrl=${encodeURIComponent("/booking/summary")}`);
+        }, 520);
+        return;
+      }
+
+      if (!sessionResponse.ok) {
+        throw new Error("SESSION_CHECK_FAILED");
+      }
+
+      showToast(
+        `Booking draft untuk ${guestName || "tamu"} (${guests} tamu) tersimpan. Membuka ringkasan pesanan...`,
+        3600,
+      );
+      window.setTimeout(() => router.push("/booking/summary"), 520);
+    } catch {
+      showToast("Akun belum dapat diverifikasi. Silakan coba kembali.", 3200);
+    } finally {
+      setIsCheckingSession(false);
+    }
   };
 
   const toggleAddOn = (id: string) => {
@@ -1508,9 +1546,15 @@ export default function VillaDetailPage() {
                   </div>
                 </div>
 
-                <Button className="w-full" variant="gold" size="lg" type="submit" disabled={!canSubmitBooking}>
-                  <CalendarDays />
-                  Pesan sekarang
+                <Button
+                  className="w-full"
+                  variant="gold"
+                  size="lg"
+                  type="submit"
+                  disabled={!canSubmitBooking || isCheckingSession}
+                >
+                  {isCheckingSession ? <Loader2 className="animate-spin" /> : <CalendarDays />}
+                  {isCheckingSession ? "Memeriksa akun..." : "Pesan sekarang"}
                 </Button>
                 {!canSubmitBooking ? (
                   <p className="text-center text-xs leading-6 text-amber-700 dark:text-amber-200">
@@ -1518,7 +1562,7 @@ export default function VillaDetailPage() {
                   </p>
                 ) : null}
                 <p className="text-center text-xs leading-6 text-emerald-950/48 dark:text-white/42">
-                  Form ini masih frontend mock; backend booking dan checkout menyusul.
+                  Login diperlukan sebelum melanjutkan ke ringkasan dan pembayaran.
                 </p>
               </div>
             </form>

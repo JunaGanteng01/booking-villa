@@ -21,6 +21,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useAdminNotificationCount } from "@/components/use-admin-notification-count";
+import { useAdminSession } from "@/components/use-admin-session";
 import { cn } from "@/lib/utils";
 
 const items = [
@@ -32,6 +34,7 @@ const items = [
   { label: "Ulasan", icon: MessageSquareText, href: "/admin/reviews" },
   { label: "Notifikasi", icon: Bell, href: "/admin/notifications" },
   { label: "Laporan", icon: BarChart3, href: "/admin/reports" },
+  { label: "Pengguna", icon: UserRound, href: "/admin/users" },
   { label: "Pengaturan", icon: Settings, href: "/admin/settings" },
 ];
 
@@ -51,6 +54,9 @@ export function AdminPageShell({
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const { profile, roleLabel, initials, canAccess, home, logout } =
+    useAdminSession();
+  const unreadCount = useAdminNotificationCount(profile.role, profile.email);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("villaku-theme");
@@ -62,6 +68,8 @@ export function AdminPageShell({
     setTheme(next);
     document.documentElement.classList.toggle("dark", next === "dark");
   }, []);
+
+  const visibleItems = items.filter((item) => canAccess(item.href));
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -89,7 +97,7 @@ export function AdminPageShell({
         className="mt-7 space-y-1"
         aria-label={mobile ? "Navigasi admin mobile" : "Navigasi admin"}
       >
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
           const selected = item.label === active;
           return (
@@ -117,14 +125,14 @@ export function AdminPageShell({
         className="mt-auto flex w-full items-center gap-3 rounded-2xl bg-emerald-950 p-4 text-left text-white"
       >
         <span className="grid size-9 place-items-center rounded-full bg-white/10 text-xs font-bold">
-          AP
+          {initials}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">
-            Ayu Prameswari
+            {profile.name}
           </span>
           <span className="mt-0.5 block text-[0.65rem] text-white/45">
-            Super Admin
+            {roleLabel}
           </span>
         </span>
         <ChevronDown className="size-4 text-white/38" />
@@ -207,9 +215,11 @@ export function AdminPageShell({
                 aria-label="Buka notifikasi admin"
               >
                 <Bell className="size-4" />
-                <span className="absolute -right-0.5 -top-1 grid size-5 place-items-center rounded-full bg-amber-400 text-[0.58rem] font-bold text-emerald-950">
-                  5
-                </span>
+                {unreadCount > 0 ? (
+                  <span className="absolute -right-0.5 -top-1 grid size-5 place-items-center rounded-full bg-amber-400 text-[0.58rem] font-bold text-emerald-950">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                ) : null}
               </Link>
               <button
                 type="button"
@@ -218,7 +228,7 @@ export function AdminPageShell({
                 aria-label="Buka menu profil"
                 aria-expanded={profileOpen}
               >
-                AP
+                {initials}
               </button>
               <AnimatePresence>
                 {profileOpen ? (
@@ -229,21 +239,28 @@ export function AdminPageShell({
                     className="absolute right-0 top-12 w-60 rounded-2xl border border-emerald-950/8 bg-[#fffdf8] p-2 shadow-2xl dark:border-white/8 dark:bg-[#10231e]"
                   >
                     <div className="border-b border-emerald-950/7 px-3 py-2.5 dark:border-white/7">
-                      <p className="text-sm font-bold">Ayu Prameswari</p>
-                      <p className="mt-0.5 text-xs opacity-40">Super Admin</p>
+                      <p className="truncate text-sm font-bold">
+                        {profile.name}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs opacity-40">
+                        {roleLabel} · {profile.email}
+                      </p>
                     </div>
                     <Link
-                      href="/admin/settings"
+                      href={
+                        canAccess("/admin/settings") ? "/admin/settings" : home
+                      }
                       className="mt-1 flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm hover:bg-emerald-950/5 dark:hover:bg-white/6"
                     >
                       <UserRound className="size-4" /> Profil & pengaturan
                     </Link>
-                    <Link
-                      href="/login"
+                    <button
+                      type="button"
+                      onClick={logout}
                       className="flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-300/8"
                     >
                       <LogOut className="size-4" /> Keluar
-                    </Link>
+                    </button>
                   </motion.div>
                 ) : null}
               </AnimatePresence>

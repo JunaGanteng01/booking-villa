@@ -23,6 +23,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { NotificationBell } from "@/components/notification-bell";
 import { useAppNotifications } from "@/components/notification-root";
+import { useAuthSession } from "@/components/use-auth-session";
 import { cn } from "@/lib/utils";
 
 type NotificationCategory = "booking" | "payment" | "stay" | "reward" | "security";
@@ -170,6 +171,7 @@ const groups: GuestNotification["group"][] = ["Hari ini", "Kemarin", "Minggu ini
 export default function NotificationHistoryPage() {
   const shouldReduceMotion = useReducedMotion();
   const { notify } = useAppNotifications();
+  const { profile, initials } = useAuthSession();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const [notifications, setNotifications] = useState(initialNotifications);
@@ -278,8 +280,11 @@ export default function NotificationHistoryPage() {
               hasPopup={false}
               label="Tampilkan notifikasi belum dibaca"
             />
-            <span className="ml-1 grid size-10 place-items-center rounded-full bg-emerald-950 text-xs font-bold text-white ring-2 ring-amber-300/60 dark:bg-emerald-700">
-              MP
+            <span
+              className="ml-1 grid size-10 place-items-center rounded-full bg-emerald-950 text-xs font-bold text-white ring-2 ring-amber-300/60 dark:bg-emerald-700"
+              aria-label={profile ? `Akun ${profile.name}` : "Memuat akun"}
+            >
+              {initials}
             </span>
           </div>
         </div>

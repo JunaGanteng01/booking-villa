@@ -1,0 +1,17 @@
+CREATE TABLE "access_roles" ("id" TEXT NOT NULL, "key" VARCHAR(80) NOT NULL, "name" VARCHAR(120) NOT NULL, "description" TEXT, "isSystem" BOOLEAN NOT NULL DEFAULT false, "isActive" BOOLEAN NOT NULL DEFAULT true, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "access_roles_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "permissions" ("id" TEXT NOT NULL, "key" VARCHAR(120) NOT NULL, "name" VARCHAR(160) NOT NULL, "module" VARCHAR(80) NOT NULL, "description" TEXT, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "permissions_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "role_permissions" ("roleId" TEXT NOT NULL, "permissionId" TEXT NOT NULL, "grantedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "role_permissions_pkey" PRIMARY KEY ("roleId", "permissionId"));
+CREATE TABLE "user_access_roles" ("userId" TEXT NOT NULL, "roleId" TEXT NOT NULL, "assignedById" TEXT, "assignedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "expiresAt" TIMESTAMP(3), CONSTRAINT "user_access_roles_pkey" PRIMARY KEY ("userId", "roleId"));
+CREATE UNIQUE INDEX "access_roles_key_key" ON "access_roles"("key");
+CREATE INDEX "access_roles_isActive_name_idx" ON "access_roles"("isActive", "name");
+CREATE UNIQUE INDEX "permissions_key_key" ON "permissions"("key");
+CREATE INDEX "permissions_module_key_idx" ON "permissions"("module", "key");
+CREATE INDEX "role_permissions_permissionId_idx" ON "role_permissions"("permissionId");
+CREATE INDEX "user_access_roles_roleId_idx" ON "user_access_roles"("roleId");
+CREATE INDEX "user_access_roles_assignedById_idx" ON "user_access_roles"("assignedById");
+CREATE INDEX "user_access_roles_expiresAt_idx" ON "user_access_roles"("expiresAt");
+ALTER TABLE "role_permissions" ADD CONSTRAINT "role_permissions_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "access_roles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "role_permissions" ADD CONSTRAINT "role_permissions_permissionId_fkey" FOREIGN KEY ("permissionId") REFERENCES "permissions"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_access_roles" ADD CONSTRAINT "user_access_roles_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_access_roles" ADD CONSTRAINT "user_access_roles_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "access_roles"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_access_roles" ADD CONSTRAINT "user_access_roles_assignedById_fkey" FOREIGN KEY ("assignedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;

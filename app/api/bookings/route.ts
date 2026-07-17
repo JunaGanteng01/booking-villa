@@ -16,6 +16,21 @@ type CreateBookingInput = PricingInput & {
 };
 
 export async function POST(request: Request) {
+  const userId = request.headers.get("x-user-id")?.trim();
+  const userName = request.headers.get("x-user-name")?.trim();
+  const userEmail = request.headers.get("x-user-email")?.trim().toLowerCase();
+  const userRole = request.headers.get("x-user-role")?.trim() || "CUSTOMER";
+
+  if (!userId || !userEmail) {
+    return NextResponse.json(
+      {
+        error: "AUTH_REQUIRED",
+        message: "Silakan login sebelum membuat booking.",
+      },
+      { status: 401 },
+    );
+  }
+
   let body: CreateBookingInput;
 
   try {
@@ -31,8 +46,8 @@ export async function POST(request: Request) {
   }
 
   const villaId = normalizeString(body.villaId);
-  const guestName = normalizeString(body.guestName);
-  const guestEmail = normalizeString(body.guestEmail).toLowerCase();
+  const guestName = userName || userEmail.split("@")[0];
+  const guestEmail = userEmail;
   const guestPhone = normalizeString(body.guestPhone);
   const specialRequest = normalizeString(body.specialRequest);
 
@@ -95,6 +110,12 @@ export async function POST(request: Request) {
   const stayDates = getStayDates(pricing.data.checkIn, pricing.data.checkOut);
   const expiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
   const booking = createBookingRecord({
+    bookedBy: {
+      userId,
+      name: guestName,
+      email: guestEmail,
+      role: userRole,
+    },
     villaId: villa.id,
     villaName: villa.name,
     status: "WAITING_PAYMENT",
@@ -189,14 +210,11 @@ function validateGuest({
 export async function GET(req: Request) {
   try {
     const userId = req.headers.get("x-user-id");
-    
+
     if (!userId) {
-      return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
-    
+
     const bookings = await prisma.booking.findMany({
       where: { userId },
       include: {
@@ -216,13 +234,10 @@ export async function GET(req: Request) {
         createdAt: "desc",
       },
     });
-    
+
     return NextResponse.json({ bookings }, { status: 200 });
   } catch (error) {
     console.error("Get bookings error:", error);
-    return NextResponse.json(
-      { message: "Terjadi kesalahan pada server" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: "Terjadi kesalahan pada server" }, { status: 500 });
   }
 }

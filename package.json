@@ -16,7 +16,9 @@
     "db:generate": "drizzle-kit generate",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma db push",
+    "db:seed": "node prisma/seed.mjs",
+    "db:setup:postgresql": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-postgresql-db.ps1"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -62,5 +64,8 @@
     "vite": "8.0.13",
     "wrangler": "4.92.0"
   },
-  "type": "module"
+  "type": "module",
+  "prisma": {
+    "seed": "node prisma/seed.mjs"
+  }
 }

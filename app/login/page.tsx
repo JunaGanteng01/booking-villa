@@ -25,6 +25,12 @@ import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
+import {
+  DEMO_ACCOUNTS,
+  getRoleDestination,
+  getRoleLabel,
+  isStaffRole,
+} from "@/lib/demo-auth";
 import { cn } from "@/lib/utils";
 
 const loginSchema = z.object({
@@ -39,23 +45,6 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-type LoginMode = "user" | "admin";
-
-const DEMO_ACCOUNTS = {
-  user: {
-    email: "maya@villaku.test",
-    password: "VillaKu2026",
-    name: "Maya Putri",
-    destination: "/dashboard",
-  },
-  admin: {
-    email: "admin@villaku.test",
-    password: "AdminVilla2026",
-    name: "Ayu Prameswari",
-    destination: "/admin/villas",
-  },
-};
-
 const reveal = {
   hidden: { opacity: 0, y: 24, filter: "blur(10px)" },
   visible: { opacity: 1, y: 0, filter: "blur(0px)" },
@@ -67,17 +56,17 @@ export default function LoginPage() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [loginSuccess, setLoginSuccess] = useState(false);
-  const [loginMode, setLoginMode] = useState<LoginMode>("user");
+  const [authenticatedUser, setAuthenticatedUser] = useState<{
+    name: string;
+    role: string;
+  } | null>(null);
 
   const {
     register,
     handleSubmit,
     watch,
-    setValue,
     setError,
     clearErrors,
-    trigger,
     formState: { errors, isValid, touchedFields },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -91,18 +80,17 @@ export default function LoginPage() {
 
   const watchedEmail = watch("email");
   const watchedPassword = watch("password");
-  const demoAccount = DEMO_ACCOUNTS[loginMode];
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("villaku-theme");
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const nextTheme = savedTheme === "dark" || (!savedTheme && prefersDark) ? "dark" : "light";
+    const prefersDark = window.matchMedia(
+      "(prefers-color-scheme: dark)",
+    ).matches;
+    const nextTheme =
+      savedTheme === "dark" || (!savedTheme && prefersDark) ? "dark" : "light";
 
     setTheme(nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
-
-    const params = new URLSearchParams(window.location.search);
-    setLoginMode(params.get("mode") === "admin" ? "admin" : "user");
   }, []);
 
   useEffect(() => {
@@ -116,25 +104,6 @@ export default function LoginPage() {
       window.localStorage.setItem("villaku-theme", next);
       return next;
     });
-  };
-
-  const useDemoAccount = async () => {
-    setValue("email", demoAccount.email, { shouldDirty: true, shouldTouch: true });
-    setValue("password", demoAccount.password, { shouldDirty: true, shouldTouch: true });
-    clearErrors();
-    await trigger(["email", "password"]);
-  };
-
-  const selectLoginMode = (mode: LoginMode) => {
-    setLoginMode(mode);
-    setValue("email", "", { shouldDirty: false });
-    setValue("password", "", { shouldDirty: false });
-    clearErrors();
-    window.history.replaceState(
-      {},
-      "",
-      mode === "admin" ? "/login?mode=admin&callbackUrl=/admin/villas" : "/login",
-    );
   };
 
   const onSubmit = async (values: LoginFormValues) => {
@@ -160,19 +129,19 @@ export default function LoginPage() {
         throw new Error(payload.message || "Login gagal. Silakan coba lagi.");
       }
 
-      const isAdmin = payload.user.role === "ADMIN" || payload.user.role === "SUPER_ADMIN";
-      if (loginMode === "admin" && !isAdmin) {
-        throw new Error("Akun ini tidak memiliki akses ke panel admin.");
-      }
-
       const params = new URLSearchParams(window.location.search);
       const requestedDestination = params.get("callbackUrl");
+      const requestedIsAllowed = Boolean(
+        requestedDestination &&
+        requestedDestination.startsWith("/") &&
+        !requestedDestination.startsWith("//") &&
+        (!requestedDestination.startsWith("/admin") ||
+          isStaffRole(payload.user.role)),
+      );
       const safeDestination =
-        requestedDestination?.startsWith("/") && !requestedDestination.startsWith("//")
+        requestedIsAllowed && requestedDestination
           ? requestedDestination
-          : isAdmin
-            ? "/admin/villas"
-            : "/dashboard";
+          : getRoleDestination(payload.user.role);
 
       window.localStorage.setItem(
         "villaku-session-preview",
@@ -184,12 +153,18 @@ export default function LoginPage() {
           signedInAt: new Date().toISOString(),
         }),
       );
-      setLoginSuccess(true);
+      setAuthenticatedUser({
+        name: payload.user.name || payload.user.email.split("@")[0],
+        role: payload.user.role,
+      });
       window.setTimeout(() => router.push(safeDestination), 850);
     } catch (error) {
       setError("root.authentication", {
         type: "manual",
-        message: error instanceof Error ? error.message : "Login gagal. Silakan coba lagi.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Login gagal. Silakan coba lagi.",
       });
     } finally {
       setIsSubmitting(false);
@@ -204,7 +179,11 @@ export default function LoginPage() {
       />
 
       <header className="relative z-30 flex items-center justify-between px-4 py-4 sm:px-6 lg:absolute lg:inset-x-0 lg:top-0 lg:px-8">
-        <Link href="/" className="group flex items-center gap-3" aria-label="Kembali ke beranda VillaKu">
+        <Link
+          href="/"
+          className="group flex items-center gap-3"
+          aria-label="Kembali ke beranda VillaKu"
+        >
           <span className="grid size-10 place-items-center rounded-full bg-emerald-700 text-sm font-bold text-white shadow-[0_10px_28px_rgba(4,120,87,0.24)] transition-transform group-hover:rotate-6 group-hover:scale-105">
             V
           </span>
@@ -231,7 +210,11 @@ export default function LoginPage() {
             className="grid size-10 place-items-center rounded-full border border-emerald-950/10 bg-white/68 text-emerald-950 shadow-sm backdrop-blur-xl transition-transform hover:-translate-y-0.5 dark:border-white/10 dark:bg-white/8 dark:text-white lg:border-emerald-950/10 lg:bg-white/68 lg:text-emerald-950"
             aria-label="Ubah tema gelap atau terang"
           >
-            {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            {theme === "dark" ? (
+              <Sun className="size-4" />
+            ) : (
+              <Moon className="size-4" />
+            )}
           </button>
         </div>
       </header>
@@ -240,91 +223,88 @@ export default function LoginPage() {
         <section className="flex items-center justify-center px-4 py-8 sm:px-8 sm:py-12 lg:px-12 lg:pb-12 lg:pt-24 xl:px-20">
           <div className="w-full max-w-xl">
             <AnimatePresence mode="wait">
-              {loginSuccess ? (
-                <LoginSuccess key="success" shouldReduceMotion={Boolean(shouldReduceMotion)} />
+              {authenticatedUser ? (
+                <LoginSuccess
+                  key="success"
+                  user={authenticatedUser}
+                  shouldReduceMotion={Boolean(shouldReduceMotion)}
+                />
               ) : (
                 <motion.div
                   key="form"
-                  initial={shouldReduceMotion ? false : { opacity: 0, y: 18, filter: "blur(8px)" }}
+                  initial={
+                    shouldReduceMotion
+                      ? false
+                      : { opacity: 0, y: 18, filter: "blur(8px)" }
+                  }
                   animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                  exit={shouldReduceMotion ? undefined : { opacity: 0, y: -14, filter: "blur(8px)" }}
+                  exit={
+                    shouldReduceMotion
+                      ? undefined
+                      : { opacity: 0, y: -14, filter: "blur(8px)" }
+                  }
                   transition={{ duration: 0.45, ease: "easeOut" }}
                 >
                   <span className="inline-flex items-center gap-2 rounded-full border border-emerald-950/10 bg-white/58 px-3 py-1.5 text-[0.64rem] font-bold uppercase tracking-[0.18em] text-emerald-700 backdrop-blur-xl dark:border-white/10 dark:bg-white/6 dark:text-emerald-300">
-                    {loginMode === "admin" ? <ShieldCheck className="size-3.5" /> : <Sparkles className="size-3.5" />}
-                    {loginMode === "admin" ? "VillaKu Admin Console" : "VillaKu Guest Circle"}
+                    <ShieldCheck className="size-3.5" /> Satu akses VillaKu
                   </span>
                   <p className="mt-6 text-xs font-bold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-300">
                     Selamat datang kembali
                   </p>
                   <h1 className="mt-3 font-serif text-4xl font-semibold leading-none tracking-[-0.045em] text-emerald-950 dark:text-white sm:text-5xl">
-                    {loginMode === "admin" ? "Masuk untuk mengelola operasional." : "Masuk untuk melanjutkan perjalanan."}
+                    Masuk dari satu tempat.
                   </h1>
                   <p className="mt-4 text-sm leading-6 text-emerald-950/52 dark:text-white/50 sm:text-base">
-                    {loginMode === "admin" ? "Gunakan akun staf yang memiliki role Admin atau Super Admin." : "Belum memiliki akun?"}{" "}
-                    {loginMode === "user" ? (
-                      <Link
-                        href="/register"
-                        className="font-semibold text-emerald-700 underline decoration-emerald-700/20 underline-offset-4 transition-colors hover:text-emerald-900 dark:text-emerald-300 dark:hover:text-emerald-200"
-                      >
-                        Daftar gratis
-                      </Link>
-                    ) : null}
+                    Form yang sama digunakan oleh seluruh tim dan tamu. Belum
+                    memiliki akun?{" "}
+                    <Link
+                      href="/register"
+                      className="font-semibold text-emerald-700 underline decoration-emerald-700/20 underline-offset-4 transition-colors hover:text-emerald-900 dark:text-emerald-300 dark:hover:text-emerald-200"
+                    >
+                      Daftar sebagai User
+                    </Link>
                   </p>
 
-                  <div className="mt-6 grid grid-cols-2 rounded-2xl border border-emerald-950/10 bg-white/48 p-1.5 dark:border-white/10 dark:bg-white/5">
-                    <button
-                      type="button"
-                      onClick={() => selectLoginMode("user")}
-                      className={cn(
-                        "flex min-h-10 items-center justify-center rounded-xl text-xs font-bold transition-all",
-                        loginMode === "user"
-                          ? "bg-emerald-700 text-white shadow-md"
-                          : "text-emerald-950/48 hover:bg-white dark:text-white/46 dark:hover:bg-white/7",
-                      )}
-                    >
-                      Login User
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => selectLoginMode("admin")}
-                      className={cn(
-                        "flex min-h-10 items-center justify-center rounded-xl text-xs font-bold transition-all",
-                        loginMode === "admin"
-                          ? "bg-emerald-950 text-white shadow-md dark:bg-amber-300 dark:text-emerald-950"
-                          : "text-emerald-950/48 hover:bg-white dark:text-white/46 dark:hover:bg-white/7",
-                      )}
-                    >
-                      Login Admin
-                    </button>
-                  </div>
-
-                  <div className="mt-4 rounded-[1.35rem] border border-amber-400/20 bg-amber-300/10 p-4 dark:bg-amber-200/6">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex gap-3">
-                        <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-400/18 text-amber-700 dark:text-amber-200">
-                          <KeyRound className="size-4" />
-                        </span>
-                        <div>
-                          <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-800 dark:text-amber-200">
-                            Akun demo
+                  <div className="mt-5 rounded-[1.35rem] border border-amber-400/20 bg-amber-300/10 p-4 dark:bg-amber-200/6">
+                    <div className="flex items-start gap-3">
+                      <span className="grid size-9 shrink-0 place-items-center rounded-full bg-amber-400/18 text-amber-700 dark:text-amber-200">
+                        <KeyRound className="size-4" />
+                      </span>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-800 dark:text-amber-200">
+                          Akun demo per role
+                        </p>
+                        <p className="mt-1 text-xs leading-5 text-emerald-950/52 dark:text-white/48">
+                          Ketik manual salah satu akun berikut. Form tidak diisi
+                          otomatis.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {DEMO_ACCOUNTS.map((account) => (
+                        <div
+                          key={account.role}
+                          className="rounded-xl border border-amber-700/10 bg-white/55 px-3 py-2.5 dark:border-white/8 dark:bg-white/6"
+                        >
+                          <p className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-amber-800 dark:text-amber-200">
+                            {account.label}
                           </p>
-                          <p className="mt-1 text-xs leading-5 text-emerald-950/52 dark:text-white/48">
-                            {demoAccount.email} · {demoAccount.password}
+                          <p className="mt-1 break-all text-[0.7rem] font-semibold text-emerald-950/68 dark:text-white/66">
+                            {account.email}
+                          </p>
+                          <p className="mt-0.5 break-all font-mono text-[0.68rem] text-emerald-950/48 dark:text-white/46">
+                            {account.password}
                           </p>
                         </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={useDemoAccount}
-                        className="rounded-full border border-amber-500/18 bg-white/58 px-3 py-2 text-[0.68rem] font-bold text-amber-800 transition-colors hover:bg-white dark:bg-white/7 dark:text-amber-200 dark:hover:bg-white/10"
-                      >
-                        Isi otomatis
-                      </button>
+                      ))}
                     </div>
                   </div>
 
-                  <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-6 space-y-5">
+                  <form
+                    onSubmit={handleSubmit(onSubmit)}
+                    noValidate
+                    className="mt-6 space-y-5"
+                  >
                     <LoginField
                       id="email"
                       label="Alamat email"
@@ -345,16 +325,26 @@ export default function LoginPage() {
                       autoComplete="current-password"
                       icon={LockKeyhole}
                       error={errors.password?.message}
-                      valid={Boolean(touchedFields.password && !errors.password)}
+                      valid={Boolean(
+                        touchedFields.password && !errors.password,
+                      )}
                       inputProps={register("password")}
                       trailing={
                         <button
                           type="button"
                           onClick={() => setShowPassword((visible) => !visible)}
                           className="grid size-9 place-items-center rounded-full text-emerald-950/36 transition-colors hover:bg-emerald-950/5 hover:text-emerald-950 dark:text-white/34 dark:hover:bg-white/7 dark:hover:text-white"
-                          aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+                          aria-label={
+                            showPassword
+                              ? "Sembunyikan password"
+                              : "Tampilkan password"
+                          }
                         >
-                          {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                          {showPassword ? (
+                            <EyeOff className="size-4" />
+                          ) : (
+                            <Eye className="size-4" />
+                          )}
                         </button>
                       }
                     />
@@ -396,14 +386,20 @@ export default function LoginPage() {
                       ) : null}
                     </AnimatePresence>
 
-                    <Button type="submit" size="lg" variant="gold" className="w-full" disabled={isSubmitting || !isValid}>
+                    <Button
+                      type="submit"
+                      size="lg"
+                      variant="gold"
+                      className="w-full"
+                      disabled={isSubmitting || !isValid}
+                    >
                       {isSubmitting ? (
                         <>
                           <Loader2 className="animate-spin" /> Memeriksa akun…
                         </>
                       ) : (
                         <>
-                          {loginMode === "admin" ? "Masuk ke panel admin" : "Masuk ke akun"} <ArrowRight />
+                          Masuk ke akun <ArrowRight />
                         </>
                       )}
                     </Button>
@@ -417,7 +413,8 @@ export default function LoginPage() {
                   <div className="mt-5 flex items-start gap-3 rounded-2xl border border-emerald-950/8 bg-white/38 p-4 text-xs leading-5 text-emerald-950/42 dark:border-white/8 dark:bg-white/4 dark:text-white/40">
                     <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
                     <p>
-                      Halaman ini menggunakan autentikasi tiruan untuk memvalidasi pengalaman login. Integrasi Auth.js akan ditambahkan pada tahap backend.
+                      Akses akan diarahkan otomatis sesuai role: Super Admin,
+                      Admin, Marketing, Receptionist, Finance, atau User.
                     </p>
                   </div>
                 </motion.div>
@@ -436,34 +433,62 @@ export default function LoginPage() {
             transition={{ duration: 1.8, ease: [0.22, 1, 0.36, 1] }}
           />
           <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(3,32,26,0.16),rgba(3,32,26,0.88)),linear-gradient(270deg,rgba(3,32,26,0.12),transparent)]" />
-          <div aria-hidden className="absolute -bottom-24 -right-20 size-96 rounded-full bg-emerald-400/16 blur-3xl" />
-          <div aria-hidden className="absolute left-8 top-32 size-52 rounded-full bg-amber-300/13 blur-3xl" />
+          <div
+            aria-hidden
+            className="absolute -bottom-24 -right-20 size-96 rounded-full bg-emerald-400/16 blur-3xl"
+          />
+          <div
+            aria-hidden
+            className="absolute left-8 top-32 size-52 rounded-full bg-amber-300/13 blur-3xl"
+          />
 
           <motion.div
             initial={shouldReduceMotion ? false : "hidden"}
             animate="visible"
-            variants={{ visible: { transition: { staggerChildren: 0.1, delayChildren: 0.2 } } }}
+            variants={{
+              visible: {
+                transition: { staggerChildren: 0.1, delayChildren: 0.2 },
+              },
+            }}
             className="relative flex min-h-screen flex-col justify-end p-10 xl:p-14"
           >
-            <motion.div variants={reveal} className="inline-flex w-fit items-center gap-2 rounded-full border border-white/16 bg-white/9 px-4 py-2 text-[0.68rem] font-bold uppercase tracking-[0.2em] text-amber-200 backdrop-blur-xl">
+            <motion.div
+              variants={reveal}
+              className="inline-flex w-fit items-center gap-2 rounded-full border border-white/16 bg-white/9 px-4 py-2 text-[0.68rem] font-bold uppercase tracking-[0.2em] text-amber-200 backdrop-blur-xl"
+            >
               <Sparkles className="size-4" /> Your private escape
             </motion.div>
-            <motion.blockquote variants={reveal} className="mt-7 max-w-2xl font-serif text-4xl font-semibold leading-[1.02] tracking-[-0.04em] xl:text-5xl">
-              “Setiap detail perjalanan terasa tenang karena semuanya tersimpan rapi dalam satu akun.”
+            <motion.blockquote
+              variants={reveal}
+              className="mt-7 max-w-2xl font-serif text-4xl font-semibold leading-[1.02] tracking-[-0.04em] xl:text-5xl"
+            >
+              “Setiap detail perjalanan terasa tenang karena semuanya tersimpan
+              rapi dalam satu akun.”
             </motion.blockquote>
-            <motion.div variants={reveal} className="mt-7 flex items-center justify-between gap-4 border-t border-white/12 pt-7">
+            <motion.div
+              variants={reveal}
+              className="mt-7 flex items-center justify-between gap-4 border-t border-white/12 pt-7"
+            >
               <div>
                 <p className="text-sm font-semibold">Maya Putri</p>
-                <p className="mt-1 text-xs text-white/48">Emerald Member · Jakarta</p>
+                <p className="mt-1 text-xs text-white/48">
+                  Emerald Member · Jakarta
+                </p>
               </div>
-              <div className="flex items-center gap-1 text-amber-300" aria-label="Rating 5 dari 5">
+              <div
+                className="flex items-center gap-1 text-amber-300"
+                aria-label="Rating 5 dari 5"
+              >
                 {Array.from({ length: 5 }, (_, index) => (
                   <Star key={index} className="size-4 fill-current" />
                 ))}
               </div>
             </motion.div>
 
-            <motion.div variants={reveal} className="mt-8 grid grid-cols-3 gap-3">
+            <motion.div
+              variants={reveal}
+              className="mt-8 grid grid-cols-3 gap-3"
+            >
               <TrustMetric value="38+" label="Premium villas" />
               <TrustMetric value="4.9/5" label="Guest rating" />
               <TrustMetric value="24/7" label="Concierge" />
@@ -484,7 +509,9 @@ type LoginFieldProps = {
   icon: typeof Mail;
   error?: string;
   valid?: boolean;
-  inputProps: ReturnType<ReturnType<typeof useForm<LoginFormValues>>["register"]>;
+  inputProps: ReturnType<
+    ReturnType<typeof useForm<LoginFormValues>>["register"]
+  >;
   trailing?: React.ReactNode;
 };
 
@@ -501,7 +528,10 @@ function LoginField({
   trailing,
 }: LoginFieldProps) {
   return (
-    <label htmlFor={id} className="grid gap-2 text-xs font-semibold text-emerald-950/62 dark:text-white/60">
+    <label
+      htmlFor={id}
+      className="grid gap-2 text-xs font-semibold text-emerald-950/62 dark:text-white/60"
+    >
       {label}
       <span
         className={cn(
@@ -511,7 +541,14 @@ function LoginField({
             : "border-emerald-950/10 focus-within:border-emerald-600/32 focus-within:ring-emerald-500/8 dark:border-white/10 dark:focus-within:border-emerald-300/30",
         )}
       >
-        <Icon className={cn("size-[1.05rem] shrink-0", error ? "text-red-500 dark:text-red-300" : "text-emerald-700/64 dark:text-emerald-300/62")} />
+        <Icon
+          className={cn(
+            "size-[1.05rem] shrink-0",
+            error
+              ? "text-red-500 dark:text-red-300"
+              : "text-emerald-700/64 dark:text-emerald-300/62",
+          )}
+        />
         <input
           id={id}
           type={type}
@@ -522,7 +559,10 @@ function LoginField({
           className="h-full min-w-0 flex-1 bg-transparent text-sm font-normal text-emerald-950 outline-none placeholder:text-emerald-950/28 dark:text-white dark:placeholder:text-white/26"
           {...inputProps}
         />
-        {trailing ?? (valid ? <Check className="size-4 shrink-0 text-emerald-600 dark:text-emerald-300" /> : null)}
+        {trailing ??
+          (valid ? (
+            <Check className="size-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
+          ) : null)}
       </span>
       <AnimatePresence initial={false}>
         {error ? (
@@ -546,22 +586,39 @@ function TrustMetric({ value, label }: { value: string; label: string }) {
   return (
     <div className="rounded-2xl border border-white/12 bg-white/8 p-4 backdrop-blur-xl">
       <p className="font-serif text-2xl font-semibold">{value}</p>
-      <p className="mt-1 text-[0.58rem] font-bold uppercase tracking-[0.14em] text-white/42">{label}</p>
+      <p className="mt-1 text-[0.58rem] font-bold uppercase tracking-[0.14em] text-white/42">
+        {label}
+      </p>
     </div>
   );
 }
 
-function LoginSuccess({ shouldReduceMotion }: { shouldReduceMotion: boolean }) {
+function LoginSuccess({
+  user,
+  shouldReduceMotion,
+}: {
+  user: { name: string; role: string };
+  shouldReduceMotion: boolean;
+}) {
   return (
     <motion.div
-      initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.96, filter: "blur(10px)" }}
+      initial={
+        shouldReduceMotion
+          ? false
+          : { opacity: 0, scale: 0.96, filter: "blur(10px)" }
+      }
       animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
       className="rounded-[2rem] border border-emerald-950/10 bg-white/58 p-7 text-center shadow-[0_24px_80px_rgba(4,34,28,0.08)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/5 sm:p-10"
     >
       <motion.div
         initial={shouldReduceMotion ? false : { scale: 0, rotate: -16 }}
         animate={{ scale: 1, rotate: 0 }}
-        transition={{ type: "spring", damping: 16, stiffness: 210, delay: 0.12 }}
+        transition={{
+          type: "spring",
+          damping: 16,
+          stiffness: 210,
+          delay: 0.12,
+        }}
         className="mx-auto grid size-20 place-items-center rounded-full bg-emerald-700 text-white shadow-[0_18px_48px_rgba(4,120,87,0.28)] ring-8 ring-emerald-600/8"
       >
         <Check className="size-9" strokeWidth={2.4} />
@@ -570,10 +627,11 @@ function LoginSuccess({ shouldReduceMotion }: { shouldReduceMotion: boolean }) {
         Login berhasil
       </p>
       <h1 className="mt-3 font-serif text-4xl font-semibold tracking-[-0.04em] text-emerald-950 dark:text-white sm:text-5xl">
-        Selamat datang, Maya.
+        Selamat datang, {user.name.split(/\s+/)[0]}.
       </h1>
       <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-emerald-950/52 dark:text-white/50">
-        Akun Anda sudah diverifikasi. Kami sedang membuka dashboard dan menyiapkan perjalanan berikutnya.
+        Login sebagai {getRoleLabel(user.role)} berhasil. Kami sedang membuka
+        halaman yang sesuai dengan akses Anda.
       </p>
       <div className="mx-auto mt-7 flex w-fit items-center gap-2 rounded-full bg-emerald-700/8 px-4 py-2 text-xs font-semibold text-emerald-700 dark:bg-emerald-300/8 dark:text-emerald-300">
         <Loader2 className="size-4 animate-spin" /> Mengarahkan ke dashboard…

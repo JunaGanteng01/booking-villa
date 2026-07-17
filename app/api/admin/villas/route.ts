@@ -11,9 +11,13 @@ import {
   normalizeAdminVillaPayload,
   slugifyMasterData,
 } from "@/lib/admin-villa-validation";
-import { adminVillaInclude, serializePrismaVilla } from "@/lib/admin-villa-prisma";
+import {
+  adminVillaInclude,
+  serializePrismaVilla,
+} from "@/lib/admin-villa-prisma";
 import { prisma } from "@/lib/prisma";
 import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
+import { hasPermission } from "@/lib/rbac";
 
 const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -25,14 +29,17 @@ const listQuerySchema = z.object({
 });
 
 export async function GET(request: Request) {
-  if (!isAdmin(request)) return forbidden();
+  if (!canView(request)) return forbidden();
 
   const parsed = listQuerySchema.safeParse(
     Object.fromEntries(new URL(request.url).searchParams.entries()),
   );
   if (!parsed.success) {
     return NextResponse.json(
-      { message: "Filter villa tidak valid.", errors: parsed.error.flatten().fieldErrors },
+      {
+        message: "Filter villa tidak valid.",
+        errors: parsed.error.flatten().fieldErrors,
+      },
       { status: 400 },
     );
   }
@@ -51,7 +58,9 @@ export async function GET(request: Request) {
           },
         }
       : {}),
-    ...(location ? { location: { equals: location, mode: "insensitive" } } : {}),
+    ...(location
+      ? { location: { equals: location, mode: "insensitive" } }
+      : {}),
     ...(search
       ? {
           OR: [
@@ -74,16 +83,25 @@ export async function GET(request: Request) {
       }),
       prisma.villa.count({ where }),
     ]);
-    return listResponse(villas.map(serializePrismaVilla), total, page, limit, "database");
+    return listResponse(
+      villas.map(serializePrismaVilla),
+      total,
+      page,
+      limit,
+      "database",
+    );
   } catch (error) {
     if (!isPrismaDatabaseUnavailableError(error)) return serverError(error);
 
     const filtered = listAdminVillaRecords().filter((villa) => {
       if (status && villa.status !== status) return false;
-      if (category && villa.category.toLowerCase() !== category.toLowerCase()) return false;
-      if (location && villa.location.toLowerCase() !== location.toLowerCase()) return false;
+      if (category && villa.category.toLowerCase() !== category.toLowerCase())
+        return false;
+      if (location && villa.location.toLowerCase() !== location.toLowerCase())
+        return false;
       if (search) {
-        const haystack = `${villa.name} ${villa.slug} ${villa.location}`.toLowerCase();
+        const haystack =
+          `${villa.name} ${villa.slug} ${villa.location}`.toLowerCase();
         if (!haystack.includes(search.toLowerCase())) return false;
       }
       return true;
@@ -99,19 +117,25 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isAdmin(request)) return forbidden();
+  if (!canManage(request)) return forbidden();
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ message: "Body request harus JSON valid." }, { status: 400 });
+    return NextResponse.json(
+      { message: "Body request harus JSON valid." },
+      { status: 400 },
+    );
   }
 
   const parsed = adminVillaSchema.safeParse(normalizeAdminVillaPayload(body));
   if (!parsed.success) {
     return NextResponse.json(
-      { message: "Data villa belum valid.", errors: parsed.error.flatten().fieldErrors },
+      {
+        message: "Data villa belum valid.",
+        errors: parsed.error.flatten().fieldErrors,
+      },
       { status: 400 },
     );
   }
@@ -127,13 +151,22 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return NextResponse.json({ message: "Slug villa sudah digunakan." }, { status: 409 });
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        { message: "Slug villa sudah digunakan." },
+        { status: 409 },
+      );
     }
     if (!isPrismaDatabaseUnavailableError(error)) return serverError(error);
 
     if (listAdminVillaRecords().some((villa) => villa.slug === data.slug)) {
-      return NextResponse.json({ message: "Slug villa sudah digunakan." }, { status: 409 });
+      return NextResponse.json(
+        { message: "Slug villa sudah digunakan." },
+        { status: 409 },
+      );
     }
     const villa = createAdminVillaRecord(toFallbackMutation(data));
     return NextResponse.json(
@@ -143,7 +176,9 @@ export async function POST(request: Request) {
   }
 }
 
-function createPrismaVillaData(data: z.infer<typeof adminVillaSchema>): Prisma.VillaCreateInput {
+function createPrismaVillaData(
+  data: z.infer<typeof adminVillaSchema>,
+): Prisma.VillaCreateInput {
   const categorySlug = slugifyMasterData(data.category);
   return {
     slug: data.slug,
@@ -187,7 +222,9 @@ function createPrismaVillaData(data: z.infer<typeof adminVillaSchema>): Prisma.V
       create: data.images.map((image, index) => ({
         url: image.url,
         cloudinaryId: image.cloudinaryId ?? null,
-        alt: image.alt ?? `${data.name} ${index === 0 ? "cover" : `gallery ${index + 1}`}`,
+        alt:
+          image.alt ??
+          `${data.name} ${index === 0 ? "cover" : `gallery ${index + 1}`}`,
         width: image.width ?? null,
         height: image.height ?? null,
         sortOrder: image.sortOrder ?? index,
@@ -197,7 +234,9 @@ function createPrismaVillaData(data: z.infer<typeof adminVillaSchema>): Prisma.V
   };
 }
 
-function toFallbackMutation(data: z.infer<typeof adminVillaSchema>): AdminVillaMutation {
+function toFallbackMutation(
+  data: z.infer<typeof adminVillaSchema>,
+): AdminVillaMutation {
   return {
     ...data,
     weekendPricePerNight: data.weekendPricePerNight ?? null,
@@ -214,7 +253,13 @@ function toFallbackMutation(data: z.infer<typeof adminVillaSchema>): AdminVillaM
   };
 }
 
-function listResponse(villas: unknown[], total: number, page: number, limit: number, source: string) {
+function listResponse(
+  villas: unknown[],
+  total: number,
+  page: number,
+  limit: number,
+  source: string,
+) {
   const totalPages = Math.max(1, Math.ceil(total / limit));
   return NextResponse.json({
     villas,
@@ -230,9 +275,15 @@ function listResponse(villas: unknown[], total: number, page: number, limit: num
   });
 }
 
-function isAdmin(request: Request) {
-  const role = request.headers.get("x-user-role");
-  return role === "SUPER_ADMIN" || role === "ADMIN";
+function canView(request: Request) {
+  return hasPermission(request.headers.get("x-user-role") ?? "", "villas.view");
+}
+
+function canManage(request: Request) {
+  return hasPermission(
+    request.headers.get("x-user-role") ?? "",
+    "villas.manage",
+  );
 }
 
 function forbidden() {
@@ -241,5 +292,8 @@ function forbidden() {
 
 function serverError(error: unknown) {
   console.error("Admin villa API error", error);
-  return NextResponse.json({ message: "Data villa belum dapat diproses." }, { status: 500 });
+  return NextResponse.json(
+    { message: "Data villa belum dapat diproses." },
+    { status: 500 },
+  );
 }

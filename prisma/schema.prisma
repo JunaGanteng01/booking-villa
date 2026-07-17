@@ -72,6 +72,31 @@ enum PaymentProvider {
   MOCK
 }
 
+enum PaymentTransactionStatus {
+  PENDING
+  REQUIRES_ACTION
+  PAID
+  FAILED
+  CANCELLED
+  EXPIRED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum PaymentProofStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum RefundStatus {
+  REQUESTED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
 enum NotificationCategory {
   BOOKING
   PAYMENT
@@ -102,6 +127,13 @@ enum NotificationPriority {
   NORMAL
   HIGH
   URGENT
+}
+
+enum ReviewStatus {
+  PENDING
+  PUBLISHED
+  HIDDEN
+  FLAGGED
 }
 
 model Category {
@@ -361,13 +393,15 @@ model Booking {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  user              User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
-  villa             Villa               @relation(fields: [villaId], references: [id], onDelete: Restrict)
-  coupon            Coupon?             @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  user              User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  villa             Villa                  @relation(fields: [villaId], references: [id], onDelete: Restrict)
+  coupon            Coupon?                @relation(fields: [couponId], references: [id], onDelete: SetNull)
   lineItems         BookingLineItem[]
   couponRedemptions CouponRedemption[]
   availabilityLocks VillaAvailability[]
   notifications     Notification[]
+  payments          Payment[]
+  statusHistory     BookingStatusHistory[]
 
   @@index([userId])
   @@index([villaId, checkIn, checkOut])
@@ -428,12 +462,127 @@ model PaymentMethod {
   isActive      Boolean           @default(true)
   requiresProof Boolean           @default(false)
   config        Json?
+  payments      Payment[]
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
   @@index([type, provider])
   @@index([isActive, sortOrder])
   @@map("payment_methods")
+}
+
+model Payment {
+  id                String                   @id @default(cuid())
+  bookingId         String
+  paymentMethodId   String?
+  provider          PaymentProvider
+  status            PaymentTransactionStatus @default(PENDING)
+  externalReference String?                  @unique @db.VarChar(191)
+  amount            Int
+  feeAmount         Int                      @default(0)
+  currency          String                   @default("IDR") @db.VarChar(3)
+  providerPayload   Json?
+  expiresAt         DateTime?
+  paidAt            DateTime?
+  failedAt          DateTime?
+  cancelledAt       DateTime?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  booking       Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  proofs        PaymentProof[]
+  refunds       Refund[]
+  events        PaymentEvent[]
+
+  @@index([bookingId, status])
+  @@index([provider, status, createdAt])
+  @@index([paymentMethodId])
+  @@map("payments")
+}
+
+model PaymentProof {
+  id              String             @id @default(cuid())
+  paymentId       String
+  status          PaymentProofStatus @default(PENDING)
+  fileUrl         String             @db.Text
+  fileName        String             @db.VarChar(255)
+  fileType        String             @db.VarChar(120)
+  fileSize        Int
+  reviewerId      String?
+  reviewedAt      DateTime?
+  rejectionReason String?            @db.Text
+  uploadedAt      DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  payment  Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  reviewer User?   @relation("PaymentProofReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId, status])
+  @@index([status, uploadedAt])
+  @@index([reviewerId])
+  @@map("payment_proofs")
+}
+
+model PaymentEvent {
+  id              String    @id @default(cuid())
+  paymentId       String
+  providerEventId String    @unique @db.VarChar(191)
+  eventType       String    @db.VarChar(120)
+  payload         Json
+  processedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("payment_events")
+}
+
+model Refund {
+  id               String       @id @default(cuid())
+  paymentId        String
+  requestedById    String?
+  processedById    String?
+  providerRefundId String?      @unique @db.VarChar(191)
+  status           RefundStatus @default(REQUESTED)
+  amount           Int
+  reason           String       @db.Text
+  failureReason    String?      @db.Text
+  requestedAt      DateTime     @default(now())
+  processedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  payment     Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  requestedBy User?   @relation("RefundRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  processedBy User?   @relation("RefundProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
+
+  @@index([paymentId, status])
+  @@index([status, requestedAt])
+  @@index([requestedById])
+  @@index([processedById])
+  @@map("refunds")
+}
+
+model BookingStatusHistory {
+  id         String         @id @default(cuid())
+  bookingId  String
+  actorId    String?
+  fromStatus BookingStatus?
+  toStatus   BookingStatus
+  reason     String?        @db.Text
+  metadata   Json?
+  createdAt  DateTime       @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  actor   User?   @relation("BookingStatusActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId, createdAt])
+  @@index([actorId])
+  @@index([toStatus, createdAt])
+  @@map("booking_status_history")
 }
 
 enum UserRole {
@@ -445,25 +594,107 @@ enum UserRole {
   CUSTOMER
 }
 
+enum UserAccountStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  DEACTIVATED
+}
+
 model User {
-  id                String    @id @default(cuid())
+  id                String            @id @default(cuid())
   name              String?
-  email             String    @unique
-  passwordHash      String?   @map("password_hash")
-  emailVerified     DateTime? @map("email_verified")
-  verificationToken String?   @unique @map("verification_token")
-  resetToken        String?   @unique @map("reset_token")
-  resetTokenExpiry  DateTime? @map("reset_token_expiry")
-  role              UserRole  @default(CUSTOMER)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  email             String            @unique
+  passwordHash      String?           @map("password_hash")
+  emailVerified     DateTime?         @map("email_verified")
+  verificationToken String?           @unique @map("verification_token")
+  resetToken        String?           @unique @map("reset_token")
+  resetTokenExpiry  DateTime?         @map("reset_token_expiry")
+  role              UserRole          @default(CUSTOMER)
+  status            UserAccountStatus @default(ACTIVE)
+  phone             String?           @db.VarChar(64)
+  avatarUrl         String?           @db.Text
+  department        String?           @db.VarChar(100)
+  lastLoginAt       DateTime?
+  invitedAt         DateTime?
+  suspendedAt       DateTime?
+  suspensionReason  String?           @db.Text
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-  bookings      Booking[]
-  wishlists     Wishlist[]
-  reviews       Review[]
-  notifications Notification[]
+  bookings             Booking[]
+  wishlists            Wishlist[]
+  reviews              Review[]
+  notifications        Notification[]
+  bookingStatusChanges BookingStatusHistory[] @relation("BookingStatusActor")
+  paymentProofReviews  PaymentProof[]         @relation("PaymentProofReviewer")
+  refundRequests       Refund[]               @relation("RefundRequestedBy")
+  refundProcesses      Refund[]               @relation("RefundProcessedBy")
+  accessRoles          UserAccessRole[]       @relation("UserAssignedRoles")
+  roleAssignments      UserAccessRole[]       @relation("RoleAssignedBy")
 
+  @@index([status, role])
+  @@index([department])
   @@map("users")
+}
+
+model AccessRole {
+  id          String           @id @default(cuid())
+  key         String           @unique @db.VarChar(80)
+  name        String           @db.VarChar(120)
+  description String?          @db.Text
+  isSystem    Boolean          @default(false)
+  isActive    Boolean          @default(true)
+  permissions RolePermission[]
+  users       UserAccessRole[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([isActive, name])
+  @@map("access_roles")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique @db.VarChar(120)
+  name        String           @db.VarChar(160)
+  module      String           @db.VarChar(80)
+  description String?          @db.Text
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([module, key])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  grantedAt    DateTime   @default(now())
+  role         AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserAccessRole {
+  userId       String
+  roleId       String
+  assignedById String?
+  assignedAt   DateTime   @default(now())
+  expiresAt    DateTime?
+  user         User       @relation("UserAssignedRoles", fields: [userId], references: [id], onDelete: Cascade)
+  role         AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedBy   User?      @relation("RoleAssignedBy", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@index([assignedById])
+  @@index([expiresAt])
+  @@map("user_access_roles")
 }
 
 model Notification {
@@ -519,19 +750,38 @@ model Wishlist {
 }
 
 model Review {
-  id         String   @id @default(cuid())
-  userId     String
-  villaId    String
-  rating     Int
-  comment    String   @db.Text
-  isFeatured Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id             String       @id @default(cuid())
+  userId         String
+  villaId        String
+  rating         Int
+  title          String?      @db.VarChar(180)
+  comment        String       @db.Text
+  status         ReviewStatus @default(PENDING)
+  isFeatured     Boolean      @default(false)
+  isVerified     Boolean      @default(false)
+  moderationNote String?      @db.Text
+  moderatedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   villa Villa @relation(fields: [villaId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([villaId])
+  @@index([status, createdAt])
+  @@index([isFeatured, status])
   @@map("reviews")
+}
+
+model WebsiteSetting {
+  key       String   @id @db.VarChar(80)
+  value     Json
+  group     String   @default("general") @db.VarChar(80)
+  isPublic  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([group, isPublic])
+  @@map("website_settings")
 }

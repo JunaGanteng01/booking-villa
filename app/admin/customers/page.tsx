@@ -14,7 +14,7 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AdminPageShell } from "@/components/admin-page-shell";
 import { useAppNotifications } from "@/components/notification-root";
 import { cn } from "@/lib/utils";
@@ -158,6 +158,11 @@ export default function CustomerListPage() {
   const { notify } = useAppNotifications();
   const [query, setQuery] = useState("");
   const [tier, setTier] = useState<"ALL" | Tier>("ALL");
+
+  useEffect(() => {
+    const search = new URLSearchParams(window.location.search).get("search");
+    if (search) setQuery(search);
+  }, []);
   const visible = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return customers.filter(

@@ -32,6 +32,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AdminFilterBar } from "@/components/admin-filter-bar";
 import { useAppNotifications } from "@/components/notification-root";
+import { useAdminNotificationCount } from "@/components/use-admin-notification-count";
+import { useAdminSession } from "@/components/use-admin-session";
 import type { BookingStoreRecord } from "@/lib/booking-store";
 import { generateInvoicePdf } from "@/lib/invoice-pdf";
 import { cn } from "@/lib/utils";
@@ -235,6 +237,7 @@ const navItems = [
   { label: "Ulasan", icon: MessageSquareText, href: "/admin/reviews" },
   { label: "Notifikasi", icon: Bell, href: "/admin/notifications" },
   { label: "Laporan", icon: BarChart3, href: "/admin/reports" },
+  { label: "Pengguna", icon: UserRound, href: "/admin/users" },
   { label: "Pengaturan", icon: Settings, href: "/admin/settings" },
 ];
 
@@ -247,12 +250,16 @@ const money = new Intl.NumberFormat("id-ID", {
 export default function AdminBookingListPage() {
   const reduceMotion = useReducedMotion();
   const { notify } = useAppNotifications();
+  const { profile, roleLabel, initials, canAccess, home, logout } =
+    useAdminSession();
+  const unreadCount = useAdminNotificationCount(profile.role, profile.email);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState<BookingItem | null>(
     null,
   );
+  const [bookingItems, setBookingItems] = useState<BookingItem[]>([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"ALL" | BookingStatus>("ALL");
   const [payment, setPayment] = useState<"ALL" | PaymentStatus>("ALL");
@@ -268,9 +275,46 @@ export default function AdminBookingListPage() {
     document.documentElement.classList.toggle("dark", next === "dark");
   }, []);
 
+  useEffect(() => {
+    if (!profile.role) return;
+    const controller = new AbortController();
+
+    void fetch("/api/admin/bookings", {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("BOOKING_SYNC_FAILED");
+        return (await response.json()) as {
+          data?: { bookings?: BookingStoreRecord[] };
+        };
+      })
+      .then((payload) => {
+        const liveBookings = (payload.data?.bookings ?? []).map(toBookingItem);
+        setBookingItems(liveBookings);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      });
+
+    return () => controller.abort();
+  }, [profile.role]);
+
+  useEffect(() => {
+    const bookingCode = new URLSearchParams(window.location.search).get(
+      "booking",
+    );
+    if (!bookingCode) return;
+    const match = bookingItems.find(
+      (item) => item.code.toLowerCase() === bookingCode.toLowerCase(),
+    );
+    if (match) setSelectedBooking(match);
+  }, [bookingItems]);
+
   const visible = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("id-ID");
-    return bookings.filter((item) => {
+    return bookingItems.filter((item) => {
       const matchesQuery =
         !normalized ||
         `${item.code} ${item.guest} ${item.email} ${item.villa}`
@@ -282,7 +326,7 @@ export default function AdminBookingListPage() {
         (payment === "ALL" || item.payment === payment)
       );
     });
-  }, [payment, query, status]);
+  }, [bookingItems, payment, query, status]);
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
@@ -295,6 +339,36 @@ export default function AdminBookingListPage() {
     setQuery("");
     setStatus("ALL");
     setPayment("ALL");
+  };
+
+  const openBookingDetail = (item: BookingItem) => {
+    setSelectedBooking(item);
+    const url = new URL(window.location.href);
+    url.searchParams.set("booking", item.code);
+    window.history.replaceState({}, "", url);
+  };
+
+  const closeBookingDetail = () => {
+    setSelectedBooking(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("booking");
+    window.history.replaceState({}, "", url);
+  };
+
+  const updateReviewedBooking = (
+    item: BookingItem,
+    nextStatus: BookingStatus,
+  ) => {
+    const updated = { ...item, status: nextStatus };
+    setBookingItems((current) =>
+      current.map((booking) => (booking.id === item.id ? updated : booking)),
+    );
+    setSelectedBooking(updated);
+    notify({
+      title: "Tinjauan booking disimpan",
+      description: `${item.code} diperbarui menjadi ${statusMeta[nextStatus].label}.`,
+      variant: "success",
+    });
   };
 
   const exportBookings = () => {
@@ -399,9 +473,11 @@ export default function AdminBookingListPage() {
                 aria-label="Buka notifikasi admin"
               >
                 <Bell className="size-4" />
-                <span className="absolute -right-0.5 -top-1 grid size-5 place-items-center rounded-full bg-amber-400 text-[0.58rem] font-bold text-emerald-950">
-                  5
-                </span>
+                {unreadCount > 0 ? (
+                  <span className="absolute -right-0.5 -top-1 grid size-5 place-items-center rounded-full bg-amber-400 text-[0.58rem] font-bold text-emerald-950">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                ) : null}
               </Link>
               <button
                 type="button"
@@ -410,7 +486,7 @@ export default function AdminBookingListPage() {
                 aria-label="Buka menu profil"
                 aria-expanded={profileOpen}
               >
-                AP
+                {initials}
               </button>
               <AnimatePresence>
                 {profileOpen ? (
@@ -421,23 +497,28 @@ export default function AdminBookingListPage() {
                     className="absolute right-0 top-12 w-60 rounded-2xl border border-emerald-950/8 bg-[#fffdf8] p-2 shadow-2xl dark:border-white/8 dark:bg-[#10231e]"
                   >
                     <div className="border-b border-emerald-950/7 px-3 py-2.5 dark:border-white/7">
-                      <p className="text-sm font-bold">Ayu Prameswari</p>
+                      <p className="truncate text-sm font-bold">
+                        {profile.name}
+                      </p>
                       <p className="mt-0.5 text-xs text-emerald-950/40 dark:text-white/38">
-                        Super Admin
+                        {roleLabel} · {profile.email}
                       </p>
                     </div>
                     <Link
-                      href="/admin/settings"
+                      href={
+                        canAccess("/admin/settings") ? "/admin/settings" : home
+                      }
                       className="mt-1 flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm hover:bg-emerald-950/5 dark:hover:bg-white/6"
                     >
                       <UserRound className="size-4" /> Profil & pengaturan
                     </Link>
-                    <Link
-                      href="/login"
+                    <button
+                      type="button"
+                      onClick={logout}
                       className="flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-300/8"
                     >
                       <LogOut className="size-4" /> Keluar
-                    </Link>
+                    </button>
                   </motion.div>
                 ) : null}
               </AnimatePresence>
@@ -485,7 +566,7 @@ export default function AdminBookingListPage() {
             <Metric
               label="Menunggu tindakan"
               value={String(
-                bookings.filter((item) => item.status === "PENDING").length,
+                bookingItems.filter((item) => item.status === "PENDING").length,
               )}
               helper="Perlu ditinjau"
               icon={Clock3}
@@ -564,7 +645,7 @@ export default function AdminBookingListPage() {
                       key={item.id}
                       item={item}
                       delay={reduceMotion ? 0 : index * 0.035}
-                      onView={() => setSelectedBooking(item)}
+                      onView={() => openBookingDetail(item)}
                     />
                   ))}
                 </tbody>
@@ -575,7 +656,7 @@ export default function AdminBookingListPage() {
                 <BookingCard
                   key={item.id}
                   item={item}
-                  onView={() => setSelectedBooking(item)}
+                  onView={() => openBookingDetail(item)}
                 />
               ))}
             </div>
@@ -609,8 +690,12 @@ export default function AdminBookingListPage() {
           <BookingDetailModal
             item={selectedBooking}
             reduceMotion={Boolean(reduceMotion)}
-            onClose={() => setSelectedBooking(null)}
+            onClose={closeBookingDetail}
             onExport={() => exportInvoice(selectedBooking)}
+            onStatusChange={(nextStatus) =>
+              updateReviewedBooking(selectedBooking, nextStatus)
+            }
+            canReview={canAccess("/admin/bookings", "PATCH")}
           />
         ) : null}
       </AnimatePresence>
@@ -784,16 +869,22 @@ function BookingDetailModal({
   reduceMotion,
   onClose,
   onExport,
+  onStatusChange,
+  canReview,
 }: {
   item: BookingItem;
   reduceMotion: boolean;
   onClose: () => void;
   onExport: () => void;
+  onStatusChange: (status: BookingStatus) => void;
+  canReview: boolean;
 }) {
+  const [reviewOpen, setReviewOpen] = useState(false);
   const status = statusMeta[item.status];
   const StatusIcon = status.icon;
   const subtotal = Math.round(item.total / 1.11);
   const tax = item.total - subtotal;
+  const reviewActions = getBookingReviewActions(item.status);
   return (
     <motion.div
       className="fixed inset-0 z-[70] flex items-end justify-center bg-emerald-950/60 p-0 backdrop-blur-lg sm:items-center sm:p-4"
@@ -930,31 +1021,98 @@ function BookingDetailModal({
             </p>
           </div>
         </div>
-        <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t border-emerald-950/8 bg-[#fffdf8]/92 p-4 backdrop-blur-xl dark:border-white/8 dark:bg-[#0c1c18]/92 sm:px-6">
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-10 rounded-full border border-emerald-950/10 px-5 text-sm font-semibold dark:border-white/10"
-          >
-            Tutup
-          </button>
-          <button
-            type="button"
-            onClick={onExport}
-            className="inline-flex min-h-10 items-center gap-2 rounded-full border border-emerald-700/20 bg-emerald-100 px-5 text-sm font-bold text-emerald-800 dark:bg-emerald-300/10 dark:text-emerald-200"
-          >
-            <Download className="size-4" /> Unduh invoice PDF
-          </button>
-          <button
-            type="button"
-            className="min-h-10 rounded-full bg-emerald-700 px-5 text-sm font-bold text-white"
-          >
-            Tinjau booking
-          </button>
+        <div className="sticky bottom-0 border-t border-emerald-950/8 bg-[#fffdf8]/94 p-4 backdrop-blur-xl dark:border-white/8 dark:bg-[#0c1c18]/94 sm:px-6">
+          <AnimatePresence initial={false}>
+            {reviewOpen ? (
+              <motion.div
+                initial={{ opacity: 0, y: 8, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: "auto" }}
+                exit={{ opacity: 0, y: 5, height: 0 }}
+                className="mb-4 overflow-hidden rounded-2xl border border-emerald-700/15 bg-emerald-50 p-4 dark:border-emerald-300/12 dark:bg-emerald-300/[0.055]"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-300">
+                      Kontrol tinjauan
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-emerald-950/50 dark:text-white/48">
+                      Pilih tindak lanjut untuk booking {item.code}.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {reviewActions.length ? (
+                      reviewActions.map((action) => (
+                        <button
+                          key={action.status}
+                          type="button"
+                          onClick={() => onStatusChange(action.status)}
+                          className={cn(
+                            "min-h-9 rounded-full px-4 text-xs font-bold transition hover:-translate-y-0.5",
+                            action.status === "CANCELLED"
+                              ? "bg-rose-100 text-rose-700 dark:bg-rose-300/10 dark:text-rose-200"
+                              : "bg-emerald-700 text-white",
+                          )}
+                        >
+                          {action.label}
+                        </button>
+                      ))
+                    ) : (
+                      <span className="rounded-full bg-emerald-950/5 px-3 py-2 text-xs font-semibold opacity-55 dark:bg-white/6">
+                        Tidak ada tindakan lanjutan
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-10 rounded-full border border-emerald-950/10 px-5 text-sm font-semibold dark:border-white/10"
+            >
+              Tutup
+            </button>
+            <button
+              type="button"
+              onClick={onExport}
+              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-emerald-700/20 bg-emerald-100 px-5 text-sm font-bold text-emerald-800 dark:bg-emerald-300/10 dark:text-emerald-200"
+            >
+              <Download className="size-4" /> Unduh invoice PDF
+            </button>
+            {canReview ? (
+              <button
+                type="button"
+                onClick={() => setReviewOpen((current) => !current)}
+                aria-expanded={reviewOpen}
+                className="min-h-10 rounded-full bg-emerald-700 px-5 text-sm font-bold text-white"
+              >
+                {reviewOpen ? "Tutup tinjauan" : "Tinjau booking"}
+              </button>
+            ) : null}
+          </div>
         </div>
       </motion.section>
     </motion.div>
   );
+}
+
+function getBookingReviewActions(status: BookingStatus) {
+  const actions: Partial<
+    Record<BookingStatus, Array<{ label: string; status: BookingStatus }>>
+  > = {
+    PENDING: [
+      { label: "Konfirmasi booking", status: "CONFIRMED" },
+      { label: "Batalkan", status: "CANCELLED" },
+    ],
+    CONFIRMED: [
+      { label: "Tandai check-in", status: "CHECKED_IN" },
+      { label: "Batalkan", status: "CANCELLED" },
+    ],
+    CHECKED_IN: [{ label: "Selesaikan booking", status: "COMPLETED" }],
+  };
+  return actions[status] ?? [];
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
@@ -1064,6 +1222,75 @@ function toInvoiceBooking(item: BookingItem): BookingStoreRecord {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+function toBookingItem(booking: BookingStoreRecord): BookingItem {
+  const demoMatch = bookings.find((item) => item.villa === booking.villaName);
+  return {
+    id: booking.id,
+    code: booking.bookingCode,
+    guest: booking.bookedBy?.name || booking.guest.name,
+    email: booking.bookedBy?.email || booking.guest.email,
+    initials: getInitials(booking.bookedBy?.name || booking.guest.name),
+    villa: booking.villaName,
+    image:
+      demoMatch?.image ||
+      "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=400&q=80",
+    checkIn: formatBookingDate(booking.checkIn),
+    checkOut: formatBookingDate(booking.checkOut),
+    nights: booking.nights,
+    guests: booking.guests,
+    total: booking.amounts.totalAmount,
+    status: bookingStatusForAdmin(booking.status),
+    payment: paymentStatusForAdmin(booking.paymentStatus),
+    createdAt: formatBookingTimestamp(booking.createdAt),
+  };
+}
+
+function bookingStatusForAdmin(status: BookingStoreRecord["status"]): BookingStatus {
+  if (status === "CONFIRMED") return "CONFIRMED";
+  if (status === "COMPLETED") return "COMPLETED";
+  if (status === "CANCELLED" || status === "EXPIRED" || status === "REFUNDED") return "CANCELLED";
+  return "PENDING";
+}
+
+function paymentStatusForAdmin(status: BookingStoreRecord["paymentStatus"]): PaymentStatus {
+  if (status === "PAID") return "PAID";
+  if (status === "FAILED") return "FAILED";
+  if (status === "REFUNDED") return "REFUNDED";
+  return "PENDING";
+}
+
+function getInitials(name: string) {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "VK"
+  );
+}
+
+function formatBookingDate(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatBookingTimestamp(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("id-ID", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function formatIsoDate(date: Date) {
@@ -1218,6 +1445,8 @@ function Sidebar({
   mobileOpen: boolean;
   onClose: () => void;
 }) {
+  const { profile, roleLabel, initials, canAccess } = useAdminSession();
+  const visibleNavItems = navItems.filter((item) => canAccess(item.href));
   const content = (mobile = false) => (
     <>
       <Link href="/" className="flex items-center gap-3 px-2 py-2">
@@ -1237,7 +1466,7 @@ function Sidebar({
         className="mt-7 space-y-1"
         aria-label={mobile ? "Navigasi admin mobile" : "Navigasi admin"}
       >
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           return (
             <Link
@@ -1260,14 +1489,14 @@ function Sidebar({
       <div className="mt-auto rounded-2xl bg-emerald-950 p-4 text-white">
         <div className="flex items-center gap-3">
           <span className="grid size-9 place-items-center rounded-full bg-white/10 text-xs font-bold">
-            AP
+            {initials}
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">
-              Ayu Prameswari
+              {profile.name}
             </span>
             <span className="mt-0.5 block text-[0.65rem] text-white/45">
-              Super Admin
+              {roleLabel}
             </span>
           </span>
           <ChevronDown className="size-4 text-white/38" />

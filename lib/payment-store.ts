@@ -33,7 +33,10 @@ export type ManualPaymentProofRecord = {
     fileSize: number;
     mockUrl: string;
   };
-  status: "WAITING_REVIEW";
+  status: "WAITING_REVIEW" | "VERIFIED" | "REJECTED";
+  reviewerId: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -109,10 +112,25 @@ export type StripeCheckoutSessionRecord = {
   updatedAt: string;
 };
 
+export type MemoryPaymentRefundRecord = {
+  id: string;
+  paymentId: string;
+  bookingId: string;
+  bookingCode: string;
+  amount: number;
+  reason: string;
+  status: "SUCCEEDED";
+  requestedById: string | null;
+  processedById: string | null;
+  requestedAt: string;
+  processedAt: string;
+};
+
 const savedPaymentMethods = new Map<string, SavedBookingPaymentMethod>();
 const manualPaymentProofs = new Map<string, ManualPaymentProofRecord>();
 const gatewaySnapshots = new Map<string, GatewaySnapshotRecord>();
 const stripeCheckoutSessions = new Map<string, StripeCheckoutSessionRecord>();
+const paymentRefunds = new Map<string, MemoryPaymentRefundRecord>();
 
 export function getPaymentMethodById(methodId: string) {
   return (
@@ -162,6 +180,79 @@ export function getSavedPaymentMethod(bookingId: string) {
   return savedPaymentMethods.get(bookingId) ?? null;
 }
 
+export function listSavedPaymentMethods() {
+  return Array.from(savedPaymentMethods.values()).sort((left, right) =>
+    right.createdAt.localeCompare(left.createdAt),
+  );
+}
+
+export function findSavedPaymentMethod(identifier: string) {
+  const normalized = identifier.toLowerCase();
+  return (
+    Array.from(savedPaymentMethods.values()).find(
+      (payment) =>
+        payment.id.toLowerCase() === normalized ||
+        payment.bookingId.toLowerCase() === normalized ||
+        payment.bookingCode.toLowerCase() === normalized,
+    ) ?? null
+  );
+}
+
+export function listMemoryPaymentRefunds(paymentId?: string) {
+  return Array.from(paymentRefunds.values())
+    .filter((refund) => !paymentId || refund.paymentId === paymentId)
+    .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt));
+}
+
+export function createMemoryPaymentRefund({
+  identifier,
+  amount,
+  reason,
+  actorId,
+}: {
+  identifier: string;
+  amount?: number;
+  reason: string;
+  actorId: string | null;
+}) {
+  const payment = findSavedPaymentMethod(identifier);
+  if (!payment) return { error: "PAYMENT_NOT_FOUND" as const };
+  const refundedAmount = listMemoryPaymentRefunds(payment.id).reduce(
+    (total, refund) => total + refund.amount,
+    0,
+  );
+  const refundableAmount = payment.amount - refundedAmount;
+  const requestedAmount = amount ?? refundableAmount;
+  if (refundableAmount <= 0) {
+    return { error: "ALREADY_REFUNDED" as const, payment, refundableAmount };
+  }
+  if (requestedAmount <= 0 || requestedAmount > refundableAmount) {
+    return { error: "INVALID_AMOUNT" as const, payment, refundableAmount };
+  }
+  const now = new Date().toISOString();
+  const refund: MemoryPaymentRefundRecord = {
+    id: `refund_${payment.id}_${Date.now().toString(36)}`,
+    paymentId: payment.id,
+    bookingId: payment.bookingId,
+    bookingCode: payment.bookingCode,
+    amount: requestedAmount,
+    reason,
+    status: "SUCCEEDED",
+    requestedById: actorId,
+    processedById: actorId,
+    requestedAt: now,
+    processedAt: now,
+  };
+  paymentRefunds.set(refund.id, refund);
+  return {
+    refund,
+    payment,
+    refundedAmount: refundedAmount + requestedAmount,
+    refundableAmount: refundableAmount - requestedAmount,
+    fullRefund: requestedAmount === refundableAmount,
+  };
+}
+
 export function saveManualPaymentProof({
   booking,
   senderName,
@@ -199,6 +290,9 @@ export function saveManualPaymentProof({
       mockUrl: `/uploads/payment-proofs/${id}/${encodeURIComponent(proof.fileName)}`,
     },
     status: "WAITING_REVIEW",
+    reviewerId: null,
+    reviewedAt: null,
+    rejectionReason: null,
     createdAt: manualPaymentProofs.get(booking.id)?.createdAt ?? now,
     updatedAt: now,
   };
@@ -211,7 +305,48 @@ export function getManualPaymentProof(bookingId: string) {
   return manualPaymentProofs.get(bookingId) ?? null;
 }
 
-export function createGatewaySnapshot(booking: BookingStoreRecord, payment: SavedBookingPaymentMethod) {
+export function listManualPaymentProofs() {
+  return Array.from(manualPaymentProofs.values());
+}
+
+export function reviewManualPaymentProof({
+  identifier,
+  action,
+  reviewerId,
+  rejectionReason,
+}: {
+  identifier: string;
+  action: "VERIFY" | "REJECT";
+  reviewerId?: string | null;
+  rejectionReason?: string | null;
+}) {
+  const proof = Array.from(manualPaymentProofs.values()).find(
+    (item) =>
+      item.id === identifier ||
+      item.bookingId === identifier ||
+      item.bookingCode.toLowerCase() === identifier.toLowerCase(),
+  );
+  if (!proof) return null;
+  if (proof.status !== "WAITING_REVIEW") {
+    return { proof, updated: false as const };
+  }
+
+  const updated: ManualPaymentProofRecord = {
+    ...proof,
+    status: action === "VERIFY" ? "VERIFIED" : "REJECTED",
+    reviewerId: reviewerId ?? null,
+    reviewedAt: new Date().toISOString(),
+    rejectionReason: action === "REJECT" ? (rejectionReason ?? null) : null,
+    updatedAt: new Date().toISOString(),
+  };
+  manualPaymentProofs.set(proof.bookingId, updated);
+  return { proof: updated, updated: true as const };
+}
+
+export function createGatewaySnapshot(
+  booking: BookingStoreRecord,
+  payment: SavedBookingPaymentMethod,
+) {
   const now = new Date().toISOString();
   const token = `mock-snap-${booking.bookingCode.toLowerCase()}-${Date.now().toString(36)}`;
   const record: GatewaySnapshotRecord = {
@@ -269,6 +404,10 @@ export function getGatewaySnapshot(bookingId: string) {
   return gatewaySnapshots.get(bookingId) ?? null;
 }
 
+export function listGatewaySnapshots() {
+  return Array.from(gatewaySnapshots.values());
+}
+
 export function createStripeCheckoutSession(
   booking: BookingStoreRecord,
   payment: SavedBookingPaymentMethod,
@@ -319,6 +458,10 @@ export function createStripeCheckoutSession(
 
 export function getStripeCheckoutSession(bookingId: string) {
   return stripeCheckoutSessions.get(bookingId) ?? null;
+}
+
+export function listStripeCheckoutSessions() {
+  return Array.from(stripeCheckoutSessions.values());
 }
 
 export function getStripeCheckoutSessionBySessionId(sessionId: string) {

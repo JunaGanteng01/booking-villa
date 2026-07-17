@@ -31,6 +31,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { NotificationBell } from "@/components/notification-bell";
 import { useAppNotifications } from "@/components/notification-root";
+import { type AuthSessionProfile, useAuthSession } from "@/components/use-auth-session";
 
 type DashboardSection = "overview" | "bookings" | "wishlist" | "profile";
 type BookingStatus = "upcoming" | "completed" | "cancelled";
@@ -191,6 +192,13 @@ const reveal = {
 export default function CustomerDashboardPage() {
   const shouldReduceMotion = useReducedMotion();
   const { notify } = useAppNotifications();
+  const { profile, initials, firstName, logout } = useAuthSession();
+  const customerProfile: AuthSessionProfile = profile ?? {
+    id: "loading",
+    name: "Pengguna VillaKu",
+    email: "",
+    role: "CUSTOMER",
+  };
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
   const [bookingFilter, setBookingFilter] = useState<"all" | BookingStatus>("all");
@@ -320,9 +328,9 @@ export default function CustomerDashboardPage() {
               type="button"
               onClick={() => setActiveSection("profile")}
               className="ml-1 grid size-10 place-items-center rounded-full bg-emerald-950 text-xs font-bold text-white ring-2 ring-amber-300/60 transition-transform hover:scale-105 dark:bg-emerald-700"
-              aria-label="Buka profil Maya Putri"
+              aria-label={`Buka profil ${customerProfile.name}`}
             >
-              MP
+              {initials}
             </button>
           </div>
         </div>
@@ -334,10 +342,10 @@ export default function CustomerDashboardPage() {
             <div className="rounded-[1.35rem] bg-emerald-950 p-4 text-white">
               <div className="flex items-center gap-3">
                 <span className="grid size-11 place-items-center rounded-full bg-white/10 font-semibold ring-1 ring-white/14">
-                  MP
+                  {initials}
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">Maya Putri</p>
+                  <p className="truncate text-sm font-semibold">{customerProfile.name}</p>
                   <p className="mt-0.5 text-xs text-white/50">Emerald Member</p>
                 </div>
               </div>
@@ -386,13 +394,7 @@ export default function CustomerDashboardPage() {
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  notify({
-                    title: "Mode pratinjau aktif",
-                    description: "Sesi tiruan tetap aktif untuk pratinjau dashboard.",
-                    variant: "info",
-                  })
-                }
+                onClick={() => void logout()}
                 className="flex w-full items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold text-red-700/66 transition-colors hover:bg-red-500/8 hover:text-red-700 dark:text-red-300/64 dark:hover:bg-red-400/8 dark:hover:text-red-200"
               >
                 <LogOut className="size-4" />
@@ -414,6 +416,7 @@ export default function CustomerDashboardPage() {
               {activeSection === "overview" ? (
                 <OverviewSection
                   shouldReduceMotion={Boolean(shouldReduceMotion)}
+                  firstName={firstName}
                   wishlistCount={wishlist.length}
                   onOpenBookings={() => setActiveSection("bookings")}
                   onOpenWishlist={() => setActiveSection("wishlist")}
@@ -439,6 +442,8 @@ export default function CustomerDashboardPage() {
 
               {activeSection === "profile" ? (
                 <ProfileSection
+                  profile={customerProfile}
+                  initials={initials}
                   onSave={() =>
                     notify({
                       title: "Profil berhasil diperbarui",
@@ -485,11 +490,13 @@ export default function CustomerDashboardPage() {
 
 function OverviewSection({
   shouldReduceMotion,
+  firstName,
   wishlistCount,
   onOpenBookings,
   onOpenWishlist,
 }: {
   shouldReduceMotion: boolean;
+  firstName: string;
   wishlistCount: number;
   onOpenBookings: () => void;
   onOpenWishlist: () => void;
@@ -514,7 +521,7 @@ function OverviewSection({
               Senin, 13 Juli 2026
             </p>
             <h1 className="mt-3 font-serif text-4xl font-semibold leading-none tracking-[-0.04em] text-emerald-950 dark:text-white sm:text-5xl">
-              Selamat datang, Maya.
+              Selamat datang, {firstName}.
             </h1>
             <p className="mt-3 text-sm leading-6 text-emerald-950/54 dark:text-white/52 sm:text-base">
               Perjalanan berikutnya tinggal 41 hari lagi. Semua detail Anda sudah siap.
@@ -917,7 +924,15 @@ function WishlistSection({
   );
 }
 
-function ProfileSection({ onSave }: { onSave: () => void }) {
+function ProfileSection({
+  profile,
+  initials,
+  onSave,
+}: {
+  profile: AuthSessionProfile;
+  initials: string;
+  onSave: () => void;
+}) {
   return (
     <div>
       <SectionHeading
@@ -928,7 +943,7 @@ function ProfileSection({ onSave }: { onSave: () => void }) {
       <div className="mt-7 grid gap-5 xl:grid-cols-[20rem_minmax(0,1fr)]">
         <article className="rounded-[1.8rem] border border-emerald-950/10 bg-emerald-950 p-6 text-center text-white shadow-[0_24px_70px_rgba(4,34,28,0.16)] dark:border-white/10">
           <div className="relative mx-auto grid size-24 place-items-center rounded-full bg-gradient-to-br from-emerald-500 to-emerald-800 font-serif text-3xl font-semibold ring-4 ring-amber-300/50">
-            MP
+            {initials}
             <button
               type="button"
               className="absolute bottom-0 right-0 grid size-8 place-items-center rounded-full bg-white text-emerald-950 shadow-lg"
@@ -937,8 +952,8 @@ function ProfileSection({ onSave }: { onSave: () => void }) {
               <Pencil className="size-3.5" />
             </button>
           </div>
-          <h2 className="mt-5 font-serif text-3xl font-semibold">Maya Putri</h2>
-          <p className="mt-1 text-sm text-white/50">maya.putri@example.com</p>
+          <h2 className="mt-5 font-serif text-3xl font-semibold">{profile.name}</h2>
+          <p className="mt-1 text-sm text-white/50">{profile.email || "Email akun sedang dimuat"}</p>
           <span className="mt-5 inline-flex items-center gap-2 rounded-full bg-amber-300/14 px-4 py-2 text-xs font-semibold text-amber-200 ring-1 ring-amber-200/16">
             <Sparkles className="size-3.5" /> Emerald Member
           </span>
@@ -971,10 +986,16 @@ function ProfileSection({ onSave }: { onSave: () => void }) {
             </span>
           </div>
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <ProfileField label="Nama lengkap" defaultValue="Maya Putri" />
-            <ProfileField label="Nomor telepon" defaultValue="+62 812 3456 7890" />
-            <ProfileField label="Email" defaultValue="maya.putri@example.com" type="email" />
-            <ProfileField label="Kota domisili" defaultValue="Jakarta, Indonesia" />
+            <ProfileField key={`name-${profile.name}`} label="Nama lengkap" defaultValue={profile.name} />
+            <ProfileField label="Nomor telepon" defaultValue="" placeholder="Tambahkan nomor telepon" />
+            <ProfileField
+              key={`email-${profile.email}`}
+              label="Email"
+              defaultValue={profile.email}
+              placeholder="Email akun"
+              type="email"
+            />
+            <ProfileField label="Kota domisili" defaultValue="" placeholder="Tambahkan kota domisili" />
           </div>
           <div className="mt-4">
             <label className="grid gap-2 text-xs font-semibold text-emerald-950/58 dark:text-white/56">
@@ -1036,13 +1057,24 @@ function BookingDetail({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProfileField({ label, defaultValue, type = "text" }: { label: string; defaultValue: string; type?: string }) {
+function ProfileField({
+  label,
+  defaultValue,
+  placeholder,
+  type = "text",
+}: {
+  label: string;
+  defaultValue: string;
+  placeholder?: string;
+  type?: string;
+}) {
   return (
     <label className="grid gap-2 text-xs font-semibold text-emerald-950/58 dark:text-white/56">
       {label}
       <input
         type={type}
         defaultValue={defaultValue}
+        placeholder={placeholder}
         className="h-12 rounded-2xl border border-emerald-950/10 bg-white/54 px-4 text-sm font-normal text-emerald-950 outline-none transition-shadow focus:border-emerald-600/30 focus:ring-4 focus:ring-emerald-500/8 dark:border-white/10 dark:bg-white/5 dark:text-white"
       />
     </label>

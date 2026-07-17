@@ -29,6 +29,7 @@ import {
   Sparkles,
   Star,
   Sun,
+  UserRound,
   Users,
   Wrench,
   X,
@@ -37,7 +38,13 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { NotificationBell } from "@/components/notification-bell";
 import { useAppNotifications } from "@/components/notification-root";
-import { listAdminVillas, updateAdminVilla, type AdminVillaDto } from "@/lib/admin-api-client";
+import { useAdminNotificationCount } from "@/components/use-admin-notification-count";
+import { useAdminSession } from "@/components/use-admin-session";
+import {
+  listAdminVillas,
+  updateAdminVilla,
+  type AdminVillaDto,
+} from "@/lib/admin-api-client";
 import { cn } from "@/lib/utils";
 
 type VillaStatus = "PUBLISHED" | "DRAFT" | "MAINTENANCE" | "ARCHIVED";
@@ -240,6 +247,7 @@ const navItems = [
   { label: "Ulasan", icon: MessageSquareText, href: "/admin/reviews" },
   { label: "Notifikasi", icon: Bell, href: "/admin/notifications" },
   { label: "Laporan", icon: BarChart3, href: "/admin/reports" },
+  { label: "Pengguna", icon: UserRound, href: "/admin/users" },
   { label: "Pengaturan", icon: Settings, href: "/admin/settings" },
 ];
 
@@ -256,7 +264,9 @@ function toAdminVilla(villa: AdminVillaDto): AdminVilla {
     name: villa.name,
     location: villa.location,
     category: villa.category,
-    image: cover?.url ?? "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=82",
+    image:
+      cover?.url ??
+      "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=900&q=82",
     price: villa.pricePerNight,
     capacity: villa.capacity,
     bedrooms: villa.bedrooms,
@@ -265,7 +275,10 @@ function toAdminVilla(villa: AdminVillaDto): AdminVilla {
     status: villa.status,
     occupancy: 0,
     bookings: 0,
-    nextAvailable: villa.status === "PUBLISHED" ? "Tersedia" : statusMeta[villa.status].label,
+    nextAvailable:
+      villa.status === "PUBLISHED"
+        ? "Tersedia"
+        : statusMeta[villa.status].label,
     featured: villa.isFeatured,
   };
 }
@@ -273,6 +286,9 @@ function toAdminVilla(villa: AdminVillaDto): AdminVilla {
 export default function AdminVillaListPage() {
   const shouldReduceMotion = useReducedMotion();
   const { notify } = useAppNotifications();
+  const { profile, initials, canAccess } = useAdminSession();
+  const unreadCount = useAdminNotificationCount(profile.role, profile.email);
+  const canManageVillas = canAccess("/api/admin/villas", "POST");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [villas, setVillas] = useState<AdminVilla[]>([]);
@@ -296,6 +312,13 @@ export default function AdminVillaListPage() {
   }, []);
 
   useEffect(() => {
+    const requestedLocation = new URLSearchParams(window.location.search).get(
+      "location",
+    );
+    if (requestedLocation) setLocation(requestedLocation);
+  }, []);
+
+  useEffect(() => {
     let active = true;
     listAdminVillas({ limit: 100 })
       .then(({ villas: items }) => {
@@ -305,7 +328,8 @@ export default function AdminVillaListPage() {
         if (!active) return;
         notify({
           title: "Daftar villa gagal dimuat",
-          description: error instanceof Error ? error.message : "Coba muat ulang halaman.",
+          description:
+            error instanceof Error ? error.message : "Coba muat ulang halaman.",
           variant: "error",
         });
       })
@@ -313,9 +337,9 @@ export default function AdminVillaListPage() {
     return () => {
       active = false;
     };
-  // `notify` is provided by the notification context and is intentionally omitted
-  // so this data request runs once per page mount.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `notify` is provided by the notification context and is intentionally omitted
+    // so this data request runs once per page mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const locations = useMemo(
@@ -382,10 +406,15 @@ export default function AdminVillaListPage() {
         variant: "success",
       });
     } catch (error) {
-      setVillas((items) => items.map((item) => item.id === villa.id ? { ...item, status: previousStatus } : item));
+      setVillas((items) =>
+        items.map((item) =>
+          item.id === villa.id ? { ...item, status: previousStatus } : item,
+        ),
+      );
       notify({
         title: "Status gagal diperbarui",
-        description: error instanceof Error ? error.message : "Silakan coba lagi.",
+        description:
+          error instanceof Error ? error.message : "Silakan coba lagi.",
         variant: "error",
       });
     }
@@ -440,12 +469,13 @@ export default function AdminVillaListPage() {
                 )}
               </button>
               <NotificationBell
-                unreadCount={5}
+                unreadCount={unreadCount}
+                onClick={() => window.location.assign("/admin/notifications")}
                 label="Buka notifikasi admin"
                 className="bg-white/70 dark:bg-white/6"
               />
               <span className="ml-1 grid size-10 place-items-center rounded-full bg-emerald-950 text-xs font-bold text-white ring-2 ring-amber-300/50 dark:bg-emerald-700">
-                AP
+                {initials}
               </span>
             </div>
           </div>
@@ -474,20 +504,22 @@ export default function AdminVillaListPage() {
                 semua properti Villaku.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2 self-start xl:self-auto">
-              <Link
-                href="/admin/villas/catalog"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-emerald-950/10 bg-white/70 px-5 text-sm font-bold text-emerald-900 transition-all hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/6 dark:text-white"
-              >
-                <Settings className="size-4" /> Master data
-              </Link>
-              <Link
-                href="/admin/villas/new"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-emerald-700 px-5 text-sm font-bold text-white shadow-[0_14px_32px_rgba(4,120,87,0.22)] transition-all hover:-translate-y-0.5 hover:bg-emerald-600"
-              >
-                <Plus className="size-4" /> Tambah villa
-              </Link>
-            </div>
+            {canAccess("/admin/villas", "POST") ? (
+              <div className="flex flex-wrap gap-2 self-start xl:self-auto">
+                <Link
+                  href="/admin/villas/catalog"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-emerald-950/10 bg-white/70 px-5 text-sm font-bold text-emerald-900 transition-all hover:-translate-y-0.5 hover:bg-white dark:border-white/10 dark:bg-white/6 dark:text-white"
+                >
+                  <Settings className="size-4" /> Master data
+                </Link>
+                <Link
+                  href="/admin/villas/new"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-emerald-700 px-5 text-sm font-bold text-white shadow-[0_14px_32px_rgba(4,120,87,0.22)] transition-all hover:-translate-y-0.5 hover:bg-emerald-600"
+                >
+                  <Plus className="size-4" /> Tambah villa
+                </Link>
+              </div>
+            ) : null}
           </motion.div>
 
           <div className="mt-7 grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -614,8 +646,18 @@ export default function AdminVillaListPage() {
 
             <AnimatePresence mode="wait">
               {isLoading ? (
-                <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid min-h-80 place-items-center border-t border-emerald-950/8 dark:border-white/8">
-                  <div className="text-center"><span className="mx-auto block size-9 animate-spin rounded-full border-2 border-emerald-700/20 border-t-emerald-700" /><p className="mt-3 text-sm text-emerald-950/46 dark:text-white/44">Memuat portofolio villa...</p></div>
+                <motion.div
+                  key="loading"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="grid min-h-80 place-items-center border-t border-emerald-950/8 dark:border-white/8"
+                >
+                  <div className="text-center">
+                    <span className="mx-auto block size-9 animate-spin rounded-full border-2 border-emerald-700/20 border-t-emerald-700" />
+                    <p className="mt-3 text-sm text-emerald-950/46 dark:text-white/44">
+                      Memuat portofolio villa...
+                    </p>
+                  </div>
                 </motion.div>
               ) : visibleVillas.length ? (
                 view === "table" ? (
@@ -648,6 +690,7 @@ export default function AdminVillaListPage() {
                               )
                             }
                             onStatus={(next) => void updateStatus(villa, next)}
+                            canManage={canManageVillas}
                             delay={shouldReduceMotion ? 0 : index * 0.035}
                           />
                         ))}
@@ -666,6 +709,7 @@ export default function AdminVillaListPage() {
                         key={villa.id}
                         villa={villa}
                         onStatus={(next) => void updateStatus(villa, next)}
+                        canManage={canManageVillas}
                         delay={shouldReduceMotion ? 0 : index * 0.05}
                       />
                     ))}
@@ -748,6 +792,8 @@ function AdminSidebar({
   mobileOpen: boolean;
   onMobileClose: () => void;
 }) {
+  const { profile, roleLabel, initials, canAccess } = useAdminSession();
+  const visibleNavItems = navItems.filter((item) => canAccess(item.href));
   const content = (mobile = false) => (
     <>
       <Link href="/" className="flex items-center gap-3 px-2 py-2">
@@ -767,7 +813,7 @@ function AdminSidebar({
         className="mt-7 space-y-1"
         aria-label={mobile ? "Navigasi admin mobile" : "Navigasi admin"}
       >
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const Icon = item.icon;
           return (
             <Link
@@ -791,14 +837,14 @@ function AdminSidebar({
       <div className="mt-auto rounded-2xl bg-emerald-950 p-4 text-white">
         <div className="flex items-center gap-3">
           <span className="grid size-9 place-items-center rounded-full bg-white/10 text-xs font-bold">
-            AP
+            {initials}
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">
-              Ayu Prameswari
+              {profile.name}
             </span>
             <span className="mt-0.5 block text-[0.65rem] text-white/45">
-              Super Admin
+              {roleLabel}
             </span>
           </span>
           <ChevronDown className="size-4 text-white/38" />
@@ -958,12 +1004,14 @@ function VillaTableRow({
   open,
   onMenu,
   onStatus,
+  canManage,
   delay,
 }: {
   villa: AdminVilla;
   open: boolean;
   onMenu: () => void;
   onStatus: (status: VillaStatus) => void;
+  canManage: boolean;
   delay: number;
 }) {
   return (
@@ -1043,32 +1091,36 @@ function VillaTableRow({
           >
             <Eye className="size-4" />
           </Link>
-                <Link
-                  href={`/admin/villas/${villa.id}/edit`}
-                  className="grid size-9 place-items-center rounded-lg text-emerald-950/38 transition hover:bg-emerald-950/5 hover:text-emerald-700 dark:text-white/36 dark:hover:bg-white/6"
-                  aria-label={`Edit ${villa.name}`}
-                >
-                  <Pencil className="size-4" />
-                </Link>
-                <Link
-                  href={`/admin/villas/${villa.id}/edit#availability`}
-                  className="grid size-9 place-items-center rounded-lg text-emerald-950/38 transition hover:bg-emerald-950/5 hover:text-emerald-700 dark:text-white/36 dark:hover:bg-white/6"
-                  aria-label={`Kelola ketersediaan ${villa.name}`}
-                >
-                  <CalendarDays className="size-4" />
-                </Link>
-          <button
-            type="button"
-            onClick={onMenu}
-            className="grid size-9 place-items-center rounded-lg text-emerald-950/38 transition hover:bg-emerald-950/5 hover:text-emerald-700 dark:text-white/36 dark:hover:bg-white/6"
-            aria-label={`Aksi lain untuk ${villa.name}`}
-            aria-expanded={open}
-          >
-            <MoreHorizontal className="size-4" />
-          </button>
+          {canManage ? (
+            <>
+              <Link
+                href={`/admin/villas/${villa.id}/edit`}
+                className="grid size-9 place-items-center rounded-lg text-emerald-950/38 transition hover:bg-emerald-950/5 hover:text-emerald-700 dark:text-white/36 dark:hover:bg-white/6"
+                aria-label={`Edit ${villa.name}`}
+              >
+                <Pencil className="size-4" />
+              </Link>
+              <Link
+                href={`/admin/villas/${villa.id}/edit#availability`}
+                className="grid size-9 place-items-center rounded-lg text-emerald-950/38 transition hover:bg-emerald-950/5 hover:text-emerald-700 dark:text-white/36 dark:hover:bg-white/6"
+                aria-label={`Kelola ketersediaan ${villa.name}`}
+              >
+                <CalendarDays className="size-4" />
+              </Link>
+              <button
+                type="button"
+                onClick={onMenu}
+                className="grid size-9 place-items-center rounded-lg text-emerald-950/38 transition hover:bg-emerald-950/5 hover:text-emerald-700 dark:text-white/36 dark:hover:bg-white/6"
+                aria-label={`Aksi lain untuk ${villa.name}`}
+                aria-expanded={open}
+              >
+                <MoreHorizontal className="size-4" />
+              </button>
+            </>
+          ) : null}
         </div>
         <AnimatePresence>
-          {open ? (
+          {open && canManage ? (
             <motion.div
               initial={{ opacity: 0, y: 5, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1109,10 +1161,12 @@ function VillaTableRow({
 function VillaAdminCard({
   villa,
   onStatus,
+  canManage,
   delay,
 }: {
   villa: AdminVilla;
   onStatus: (status: VillaStatus) => void;
+  canManage: boolean;
   delay: number;
 }) {
   return (
@@ -1173,15 +1227,17 @@ function VillaAdminCard({
           >
             <Eye className="size-3.5" /> Preview
           </Link>
-          <button
-            type="button"
-            onClick={() =>
-              onStatus(villa.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED")
-            }
-            className="inline-flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-emerald-700 text-xs font-bold text-white transition hover:bg-emerald-600"
-          >
-            {villa.status === "PUBLISHED" ? "Jadikan draft" : "Publikasikan"}
-          </button>
+          {canManage ? (
+            <button
+              type="button"
+              onClick={() =>
+                onStatus(villa.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED")
+              }
+              className="inline-flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-emerald-700 text-xs font-bold text-white transition hover:bg-emerald-600"
+            >
+              {villa.status === "PUBLISHED" ? "Jadikan draft" : "Publikasikan"}
+            </button>
+          ) : null}
         </div>
       </div>
     </motion.article>

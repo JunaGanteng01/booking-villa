@@ -1,15 +1,27 @@
 import type { BookingStoreRecord } from "@/lib/booking-store";
-import type {
-  ManualPaymentProofRecord,
-  SavedBookingPaymentMethod,
-  StripeCheckoutSessionRecord,
-} from "@/lib/payment-store";
+import type { ManualPaymentProofRecord } from "@/lib/payment-store";
+
+export type InvoicePaymentDetails = {
+  method: { id: string; title: string };
+  amount: number;
+  fee: number;
+};
+
+export type InvoiceManualPaymentDetails = {
+  id: string;
+  status: ManualPaymentProofRecord["status"];
+};
+
+export type InvoiceStripeDetails = {
+  provider: string;
+  paymentStatus: string;
+};
 
 export type InvoicePdfInput = {
   booking: BookingStoreRecord;
-  payment?: SavedBookingPaymentMethod | null;
-  manualConfirmation?: ManualPaymentProofRecord | null;
-  stripeSession?: StripeCheckoutSessionRecord | null;
+  payment?: InvoicePaymentDetails | null;
+  manualConfirmation?: InvoiceManualPaymentDetails | null;
+  stripeSession?: InvoiceStripeDetails | null;
   provider?: string | null;
   invoiceNumber?: string;
   issuedAt?: string;
@@ -85,7 +97,9 @@ function normalizeInvoiceInput(input: InvoicePdfInput) {
   };
 }
 
-function createInvoiceContent(invoice: ReturnType<typeof normalizeInvoiceInput>) {
+function createInvoiceContent(
+  invoice: ReturnType<typeof normalizeInvoiceInput>,
+) {
   const { booking, payment, manualConfirmation, stripeSession } = invoice;
   const commands: string[] = [];
 
@@ -93,9 +107,13 @@ function createInvoiceContent(invoice: ReturnType<typeof normalizeInvoiceInput>)
   commands.push(rect(0, 696, PAGE_WIDTH, 26, emeraldMuted));
   commands.push(rect(marginX, 718, 84, 3, gold));
   commands.push(textAt("VillaKu", 48, 792, 24, "F2", white));
-  commands.push(textAt("Premium Villa Booking", 48, 768, 10, "F1", [0.86, 0.93, 0.88]));
+  commands.push(
+    textAt("Premium Villa Booking", 48, 768, 10, "F1", [0.86, 0.93, 0.88]),
+  );
   commands.push(textAt("INVOICE", 428, 794, 22, "F2", white));
-  commands.push(textAt(invoice.invoiceNumber, 428, 772, 10, "F1", [0.86, 0.93, 0.88]));
+  commands.push(
+    textAt(invoice.invoiceNumber, 428, 772, 10, "F1", [0.86, 0.93, 0.88]),
+  );
 
   commands.push(rect(48, 606, 238, 82, softGray));
   commands.push(rect(309, 606, 238, 82, softGray));
@@ -105,14 +123,43 @@ function createInvoiceContent(invoice: ReturnType<typeof normalizeInvoiceInput>)
   commands.push(textAt(booking.guest.phone, 64, 614, 9, "F1", muted));
   commands.push(textAt("Booking", 325, 666, 9, "F2", gold));
   commands.push(textAt(booking.bookingCode, 325, 647, 13, "F2", ink));
-  commands.push(textAt(`${booking.villaName} - ${booking.guests} guest`, 325, 629, 9, "F1", muted));
-  commands.push(textAt(`${formatDate(booking.checkIn)} to ${formatDate(booking.checkOut)}`, 325, 614, 9, "F1", muted));
+  commands.push(
+    textAt(
+      `${booking.villaName} - ${booking.guests} guest`,
+      325,
+      629,
+      9,
+      "F1",
+      muted,
+    ),
+  );
+  commands.push(
+    textAt(
+      `${formatDate(booking.checkIn)} to ${formatDate(booking.checkOut)}`,
+      325,
+      614,
+      9,
+      "F1",
+      muted,
+    ),
+  );
 
   commands.push(labelValueRow("Issued", formatDate(invoice.issuedAt), 48, 574));
-  commands.push(labelValueRow("Provider", invoice.provider.replace(/_/g, " "), 218, 574));
+  commands.push(
+    labelValueRow("Provider", invoice.provider.replace(/_/g, " "), 218, 574),
+  );
   commands.push(labelValueRow("Booking Status", booking.status, 388, 574));
-  commands.push(labelValueRow("Payment Status", booking.paymentStatus, 48, 536));
-  commands.push(labelValueRow("Payment Method", payment?.method.title ?? "Not selected", 218, 536));
+  commands.push(
+    labelValueRow("Payment Status", booking.paymentStatus, 48, 536),
+  );
+  commands.push(
+    labelValueRow(
+      "Payment Method",
+      payment?.method.title ?? "Not selected",
+      218,
+      536,
+    ),
+  );
   commands.push(labelValueRow("Nights", `${booking.nights} night`, 388, 536));
 
   const tableTop = 492;
@@ -137,19 +184,33 @@ function createInvoiceContent(invoice: ReturnType<typeof normalizeInvoiceInput>)
   ];
 
   invoiceRows.slice(0, 9).forEach((row, index) => {
-    if (index % 2 === 0) commands.push(rect(48, rowY - 5, 499, 22, [0.98, 0.97, 0.94]));
+    if (index % 2 === 0)
+      commands.push(rect(48, rowY - 5, 499, 22, [0.98, 0.97, 0.94]));
     commands.push(textAt(row.label, 64, rowY, 9, "F1", ink));
-    commands.push(rightTextAt(formatRupiah(row.amount), 529, rowY, 9, "F1", ink));
+    commands.push(
+      rightTextAt(formatRupiah(row.amount), 529, rowY, 9, "F1", ink),
+    );
     rowY -= 24;
   });
 
   commands.push(line(48, rowY + 7, 547, rowY + 7, [0.78, 0.8, 0.76], 0.8));
   rowY -= 18;
-  commands.push(totalRow("Total booking", booking.amounts.totalAmount, rowY, false));
+  commands.push(
+    totalRow("Total booking", booking.amounts.totalAmount, rowY, false),
+  );
   rowY -= 22;
-  commands.push(totalRow("Payable now", payment?.amount ?? booking.amounts.depositAmount, rowY, true));
+  commands.push(
+    totalRow(
+      "Payable now",
+      payment?.amount ?? booking.amounts.depositAmount,
+      rowY,
+      true,
+    ),
+  );
   rowY -= 22;
-  commands.push(totalRow("Remaining balance", booking.amounts.remainingAmount, rowY, false));
+  commands.push(
+    totalRow("Remaining balance", booking.amounts.remainingAmount, rowY, false),
+  );
 
   const paymentY = 142;
   commands.push(rect(48, paymentY, 499, 88, beige));
@@ -168,11 +229,31 @@ function createInvoiceContent(invoice: ReturnType<typeof normalizeInvoiceInput>)
       ink,
     ),
   );
-  commands.push(textAt(`Updated: ${formatDateTime(booking.updatedAt)}`, 64, paymentY + 18, 8, "F1", muted));
+  commands.push(
+    textAt(
+      `Updated: ${formatDateTime(booking.updatedAt)}`,
+      64,
+      paymentY + 18,
+      8,
+      "F1",
+      muted,
+    ),
+  );
 
   commands.push(line(48, 92, 547, 92, [0.82, 0.84, 0.8], 0.8));
-  commands.push(textAt("Thank you for choosing VillaKu.", 48, 72, 10, "F2", emerald));
-  commands.push(textAt("This invoice is generated from the VillaKu booking system.", 48, 55, 8, "F1", muted));
+  commands.push(
+    textAt("Thank you for choosing VillaKu.", 48, 72, 10, "F2", emerald),
+  );
+  commands.push(
+    textAt(
+      "This invoice is generated from the VillaKu booking system.",
+      48,
+      55,
+      8,
+      "F1",
+      muted,
+    ),
+  );
   commands.push(rightTextAt("villaku.local", 547, 55, 8, "F1", muted));
 
   return commands.join("\n");
@@ -185,7 +266,12 @@ function labelValueRow(label: string, value: string, x: number, y: number) {
   ].join("\n");
 }
 
-function totalRow(label: string, amount: number, y: number, highlight: boolean) {
+function totalRow(
+  label: string,
+  amount: number,
+  y: number,
+  highlight: boolean,
+) {
   return [
     highlight ? rect(320, y - 7, 227, 24, [0.9, 0.96, 0.92]) : "",
     textAt(label, 337, y, highlight ? 11 : 10, highlight ? "F2" : "F1", ink),
@@ -200,20 +286,41 @@ function paymentNote({
 }: {
   paymentStatus: BookingStoreRecord["paymentStatus"];
   manualStatus?: ManualPaymentProofRecord["status"];
-  stripeStatus?: StripeCheckoutSessionRecord["paymentStatus"];
+  stripeStatus?: string;
 }) {
-  if (paymentStatus === "PAID") return "Payment has been confirmed. Your villa booking is secured.";
-  if (manualStatus) return "Manual transfer proof has been received and is waiting for finance review.";
-  if (stripeStatus === "failed") return "Stripe payment failed. Please retry payment from the payment page.";
-  if (paymentStatus === "REFUNDED") return "Refund has been processed for this booking.";
+  if (paymentStatus === "PAID")
+    return "Payment has been confirmed. Your villa booking is secured.";
+  if (manualStatus === "VERIFIED")
+    return "Manual transfer has been verified. Your villa booking is secured.";
+  if (manualStatus === "REJECTED")
+    return "Manual transfer proof was rejected. Please upload a valid proof.";
+  if (manualStatus === "WAITING_REVIEW")
+    return "Manual transfer proof has been received and is waiting for finance review.";
+  if (stripeStatus === "failed")
+    return "Stripe payment failed. Please retry payment from the payment page.";
+  if (paymentStatus === "REFUNDED")
+    return "Refund has been processed for this booking.";
   return "Payment is still pending. Please complete payment before the booking hold expires.";
 }
 
-function rect(x: number, y: number, width: number, height: number, color: PdfColor) {
+function rect(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  color: PdfColor,
+) {
   return `q\n${colorCommand(color, "rg")}\n${number(x)} ${number(y)} ${number(width)} ${number(height)} re f\nQ`;
 }
 
-function line(x1: number, y1: number, x2: number, y2: number, color: PdfColor, width: number) {
+function line(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  color: PdfColor,
+  width: number,
+) {
   return `q\n${colorCommand(color, "RG")}\n${number(width)} w\n${number(x1)} ${number(y1)} m\n${number(x2)} ${number(y2)} l\nS\nQ`;
 }
 
@@ -236,7 +343,14 @@ function rightTextAt(
   font: "F1" | "F2",
   color: PdfColor,
 ) {
-  return textAt(value, rightX - estimateTextWidth(value, size, font), y, size, font, color);
+  return textAt(
+    value,
+    rightX - estimateTextWidth(value, size, font),
+    y,
+    size,
+    font,
+    color,
+  );
 }
 
 function colorCommand(color: PdfColor, operator: "rg" | "RG") {
@@ -277,11 +391,16 @@ function formatDateTime(value: string) {
 }
 
 function number(value: number) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+  return Number.isInteger(value)
+    ? String(value)
+    : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function escapePdfText(value: string) {
-  return sanitizePdfText(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+  return sanitizePdfText(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
 }
 
 function sanitizePdfText(value: string) {

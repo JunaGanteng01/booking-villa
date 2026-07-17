@@ -1,87 +1,189 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import {
+  deleteAdminReviewRecord,
+  getAdminReviewRecord,
+  updateAdminReviewRecord,
+} from "@/lib/admin-review-store";
 import { prisma } from "@/lib/prisma";
+import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
+import { hasPermission } from "@/lib/rbac";
+
+const updateSchema = z
+  .object({
+    status: z.enum(["PENDING", "PUBLISHED", "HIDDEN", "FLAGGED"]).optional(),
+    isFeatured: z.boolean().optional(),
+    moderationNote: z.string().trim().max(1000).nullable().optional(),
+  })
+  .refine(
+    (value) =>
+      value.status !== undefined ||
+      value.isFeatured !== undefined ||
+      value.moderationNote !== undefined,
+    { message: "Minimal satu perubahan harus dikirim." },
+  );
 
 export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!isAdmin(request)) return forbidden();
+  let body: unknown;
   try {
-    const userRole = req.headers.get("x-user-role");
-    
-    if (userRole !== "SUPER_ADMIN" && userRole !== "ADMIN") {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-    }
-    
-    const { id } = await params;
-    const body = await req.json();
-    
-    if (body.isFeatured === undefined) {
-      return NextResponse.json({ message: "Field isFeatured dibutuhkan" }, { status: 400 });
-    }
-    
-    const review = await prisma.review.update({
-      where: { id },
-      data: {
-        isFeatured: body.isFeatured,
-      },
-    });
-    
-    return NextResponse.json({ review, message: "Review berhasil diperbarui" }, { status: 200 });
-  } catch (error) {
-    console.error("Admin update review error:", error);
+    body = await request.json();
+  } catch {
     return NextResponse.json(
-      { message: "Terjadi kesalahan pada server" },
-      { status: 500 }
+      { message: "Body request harus berupa JSON valid." },
+      { status: 400 },
     );
   }
+  const parsed = updateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      {
+        message: "Data moderasi ulasan tidak valid.",
+        errors: parsed.error.flatten().fieldErrors,
+      },
+      { status: 400 },
+    );
+  }
+  const { id } = await params;
+
+  try {
+    const current = await prisma.review.findUnique({ where: { id } });
+    if (!current) return notFound();
+    const status = parsed.data.status ?? current.status;
+    const isFeatured = parsed.data.isFeatured ?? current.isFeatured;
+    if (isFeatured && status !== "PUBLISHED") return featuredConflict();
+
+    const review = await prisma.$transaction(async (transaction) => {
+      const updated = await transaction.review.update({
+        where: { id },
+        data: {
+          ...parsed.data,
+          isFeatured,
+          moderatedAt: new Date(),
+        },
+        include: {
+          user: { select: { name: true, email: true } },
+          villa: { select: { name: true } },
+        },
+      });
+      await refreshVillaRating(transaction, current.villaId);
+      return updated;
+    });
+    return NextResponse.json({
+      review,
+      message: "Moderasi ulasan berhasil disimpan.",
+      meta: { source: "database" },
+    });
+  } catch (error) {
+    if (!isPrismaDatabaseUnavailableError(error)) return serverError(error);
+  }
+
+  const current = getAdminReviewRecord(id);
+  if (!current) return notFound();
+  const status = parsed.data.status ?? current.status;
+  const isFeatured = parsed.data.isFeatured ?? current.isFeatured;
+  if (isFeatured && status !== "PUBLISHED") return featuredConflict();
+  const review = updateAdminReviewRecord(id, {
+    ...parsed.data,
+    isFeatured,
+  });
+  return NextResponse.json({
+    review,
+    message: "Moderasi ulasan berhasil disimpan.",
+    meta: { source: "memory-fallback" },
+  });
 }
 
 export async function DELETE(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!isAdmin(request)) return forbidden();
+  const { id } = await params;
   try {
-    const userRole = req.headers.get("x-user-role");
-    
-    if (userRole !== "SUPER_ADMIN" && userRole !== "ADMIN") {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-    }
-    
-    const { id } = await params;
-    
-    const review = await prisma.review.findUnique({
-      where: { id }
+    const current = await prisma.review.findUnique({ where: { id } });
+    if (!current) return notFound();
+    await prisma.$transaction(async (transaction) => {
+      await transaction.review.delete({ where: { id } });
+      await refreshVillaRating(transaction, current.villaId);
     });
-    
-    if (!review) {
-      return NextResponse.json({ message: "Review tidak ditemukan" }, { status: 404 });
-    }
-    
-    await prisma.review.delete({
-      where: { id },
+    return NextResponse.json({
+      success: true,
+      message: "Ulasan berhasil dihapus.",
+      meta: { source: "database" },
     });
-    
-    // Update villa rating average
-    const aggregations = await prisma.review.aggregate({
-      where: { villaId: review.villaId },
-      _avg: { rating: true },
-      _count: { id: true },
-    });
-    
-    await prisma.villa.update({
-      where: { id: review.villaId },
-      data: {
-        ratingAverage: aggregations._avg.rating || 0,
-        reviewCount: aggregations._count.id || 0,
-      },
-    });
-    
-    return NextResponse.json({ message: "Review berhasil dihapus" }, { status: 200 });
   } catch (error) {
-    console.error("Admin delete review error:", error);
-    return NextResponse.json(
-      { message: "Terjadi kesalahan pada server" },
-      { status: 500 }
-    );
+    if (!isPrismaDatabaseUnavailableError(error)) return serverError(error);
   }
+
+  if (!deleteAdminReviewRecord(id)) return notFound();
+  return NextResponse.json({
+    success: true,
+    message: "Ulasan berhasil dihapus.",
+    meta: { source: "memory-fallback" },
+  });
+}
+
+async function refreshVillaRating(
+  transaction: Prisma.TransactionClient,
+  villaId: string,
+) {
+  const aggregation = await transaction.review.aggregate({
+    where: { villaId, status: "PUBLISHED" },
+    _avg: { rating: true },
+    _count: { id: true },
+  });
+  await transaction.villa.update({
+    where: { id: villaId },
+    data: {
+      ratingAverage: aggregation._avg.rating ?? 0,
+      reviewCount: aggregation._count.id,
+    },
+  });
+}
+
+function isAdmin(request: Request) {
+  return hasPermission(
+    request.headers.get("x-user-role") ?? "",
+    "reviews.manage",
+  );
+}
+
+function forbidden() {
+  return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+}
+
+function notFound() {
+  return NextResponse.json(
+    { message: "Ulasan tidak ditemukan." },
+    { status: 404 },
+  );
+}
+
+function featuredConflict() {
+  return NextResponse.json(
+    {
+      message:
+        "Hanya ulasan berstatus published yang dapat dijadikan featured.",
+    },
+    { status: 409 },
+  );
+}
+
+function serverError(error: unknown) {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2025"
+  ) {
+    return notFound();
+  }
+  console.error("Admin review moderation API error", error);
+  return NextResponse.json(
+    { message: "Ulasan belum dapat diproses." },
+    { status: 500 },
+  );
 }

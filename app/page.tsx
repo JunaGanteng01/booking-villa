@@ -48,6 +48,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useAppNotifications } from "@/components/notification-root";
 import { RatingStars } from "@/components/rating-stars";
 import { Button } from "@/components/ui/button";
+import { useAuthSession } from "@/components/use-auth-session";
 import { cn } from "@/lib/utils";
 
 type Icon = ComponentType<{ className?: string }>;
@@ -234,6 +235,7 @@ export default function Home() {
   const heroRef = useRef<HTMLElement | null>(null);
   const router = useRouter();
   const { notify } = useAppNotifications();
+  const { profile, isLoading: isAccountLoading, home: accountHome } = useAuthSession();
   const [activeSection, setActiveSection] = useState("home");
   const [isScrolled, setIsScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -266,7 +268,8 @@ export default function Home() {
     const prefersDark =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const nextTheme = savedTheme === "dark" || (!savedTheme && prefersDark) ? "dark" : "light";
+    const nextTheme =
+      savedTheme === "dark" || (!savedTheme && prefersDark) ? "dark" : "light";
 
     setTheme(nextTheme);
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
@@ -394,17 +397,34 @@ export default function Home() {
       checkOut: String(formData.get("checkOut") ?? ""),
       available: "true",
     });
+    const searchDestination = `/villas?${params.toString()}`;
+
+    window.sessionStorage.setItem("villaku-pending-search", params.toString());
+
+    if (!profile) {
+      notify({
+        title: "Login diperlukan",
+        description: "Masuk terlebih dahulu agar reservasi tercatat atas nama akun Anda.",
+        variant: "info",
+      });
+      router.push(`/login?callbackUrl=${encodeURIComponent(searchDestination)}`);
+      return;
+    }
 
     notify({
       title: "Pencarian villa siap",
-      description: "Kriteria diterapkan. Membuka katalog villa terbaik untuk tanggal Anda.",
+      description:
+        "Kriteria diterapkan. Membuka katalog villa terbaik untuk tanggal Anda.",
       variant: "success",
     });
-    router.push(`/villas?${params.toString()}`);
+    router.push(searchDestination);
   };
 
   return (
-    <div ref={rootRef} className="relative min-h-screen overflow-hidden bg-background text-foreground">
+    <div
+      ref={rootRef}
+      className="relative min-h-screen overflow-hidden bg-background text-foreground"
+    >
       <motion.div
         aria-hidden
         className="fixed left-0 top-0 z-[80] h-1 w-full origin-left bg-[linear-gradient(90deg,#047857,#d6a84f,#f7d98c)]"
@@ -414,6 +434,8 @@ export default function Home() {
       <LuxuryLoader show={showLoader} />
 
       <Navbar
+        accountHref={accountHome}
+        accountName={profile?.name}
         activeSection={activeSection}
         isScrolled={isScrolled}
         onOpenDrawer={() => setIsDrawerOpen(true)}
@@ -423,6 +445,8 @@ export default function Home() {
       />
 
       <MobileDrawer
+        accountHref={accountHome}
+        accountName={profile?.name}
         activeSection={activeSection}
         open={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
@@ -432,7 +456,9 @@ export default function Home() {
       />
 
       <motion.main
-        initial={shouldReduceMotion ? false : { opacity: 0, filter: "blur(14px)" }}
+        initial={
+          shouldReduceMotion ? false : { opacity: 0, filter: "blur(14px)" }
+        }
         animate={{ opacity: 1, filter: "blur(0px)" }}
         transition={{ duration: 0.65, ease: "easeOut" }}
       >
@@ -445,7 +471,10 @@ export default function Home() {
           <motion.div
             aria-hidden
             className="absolute inset-0 hero-image"
-            style={{ scale: shouldReduceMotion ? 1 : heroScale, opacity: heroOpacity }}
+            style={{
+              scale: shouldReduceMotion ? 1 : heroScale,
+              opacity: heroOpacity,
+            }}
           />
           <motion.div
             aria-hidden
@@ -462,7 +491,10 @@ export default function Home() {
             className="mountain-layer mountain-layer-front"
             style={{ y: shouldReduceMotion ? 0 : treeY }}
           />
-          <div aria-hidden className="absolute inset-0 bg-[linear-gradient(90deg,rgba(4,34,28,0.92),rgba(4,34,28,0.58)_42%,rgba(4,34,28,0.18)),linear-gradient(0deg,rgba(245,240,232,1)_0%,rgba(245,240,232,0)_28%)] dark:bg-[linear-gradient(90deg,rgba(2,18,15,0.96),rgba(2,18,15,0.68)_42%,rgba(2,18,15,0.24)),linear-gradient(0deg,rgba(7,18,17,1)_0%,rgba(7,18,17,0)_28%)]" />
+          <div
+            aria-hidden
+            className="absolute inset-0 bg-[linear-gradient(90deg,rgba(4,34,28,0.92),rgba(4,34,28,0.58)_42%,rgba(4,34,28,0.18)),linear-gradient(0deg,rgba(245,240,232,1)_0%,rgba(245,240,232,0)_28%)] dark:bg-[linear-gradient(90deg,rgba(2,18,15,0.96),rgba(2,18,15,0.68)_42%,rgba(2,18,15,0.24)),linear-gradient(0deg,rgba(7,18,17,1)_0%,rgba(7,18,17,0)_28%)]"
+          />
 
           <div className="container relative z-10 mx-auto grid max-w-7xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
             <div className="max-w-3xl">
@@ -472,7 +504,9 @@ export default function Home() {
                 animate="visible"
                 transition={{ duration: 0.8, ease: "easeOut" }}
               >
-                <SectionBadge icon={Sparkles}>Luxury villa booking experience</SectionBadge>
+                <SectionBadge icon={Sparkles}>
+                  Luxury villa booking experience
+                </SectionBadge>
               </motion.div>
 
               <h1 className="mt-7 max-w-4xl font-serif text-5xl font-semibold leading-[0.95] tracking-[-0.06em] text-white sm:text-6xl md:text-7xl xl:text-[6.7rem]">
@@ -486,9 +520,9 @@ export default function Home() {
                 animate="visible"
                 transition={{ delay: 0.35, duration: 0.8, ease: "easeOut" }}
               >
-                Villaku menghadirkan pencarian villa, ketersediaan, ringkasan harga, pembayaran,
-                dan pengalaman tamu dalam satu alur elegan yang siap dikembangkan menjadi sistem
-                full-stack booking.
+                Villaku menghadirkan pencarian villa, ketersediaan, ringkasan
+                harga, pembayaran, dan pengalaman tamu dalam satu alur elegan
+                yang siap dikembangkan menjadi sistem full-stack booking.
               </motion.p>
 
               <motion.div
@@ -498,7 +532,12 @@ export default function Home() {
                 animate="visible"
                 transition={{ delay: 0.5, duration: 0.75, ease: "easeOut" }}
               >
-                <Button size="lg" variant="gold" type="button" onClick={() => scrollToSection("villas")}>
+                <Button
+                  size="lg"
+                  variant="gold"
+                  type="button"
+                  onClick={() => scrollToSection("villas")}
+                >
                   Jelajahi villa
                   <ArrowUpRight className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                 </Button>
@@ -520,7 +559,9 @@ export default function Home() {
                 animate="visible"
                 variants={{
                   hidden: {},
-                  visible: { transition: { staggerChildren: 0.12, delayChildren: 0.62 } },
+                  visible: {
+                    transition: { staggerChildren: 0.12, delayChildren: 0.62 },
+                  },
                 }}
               >
                 {heroMetrics.map((metric) => (
@@ -530,7 +571,11 @@ export default function Home() {
                     className="rounded-3xl border border-white/12 bg-white/10 p-4 text-white shadow-2xl backdrop-blur-xl"
                   >
                     <div className="font-serif text-2xl font-semibold sm:text-3xl">
-                      <Counter value={metric.value} suffix={metric.suffix} decimal={metric.decimal} />
+                      <Counter
+                        value={metric.value}
+                        suffix={metric.suffix}
+                        decimal={metric.decimal}
+                      />
                     </div>
                     <p className="mt-1 text-[0.68rem] uppercase tracking-[0.22em] text-white/58">
                       {metric.label}
@@ -542,23 +587,37 @@ export default function Home() {
 
             <motion.div
               className="relative"
-              initial={shouldReduceMotion ? false : { opacity: 0, x: 42, scale: 0.97 }}
+              initial={
+                shouldReduceMotion ? false : { opacity: 0, x: 42, scale: 0.97 }
+              }
               animate={{ opacity: 1, x: 0, scale: 1 }}
               transition={{ delay: 0.35, duration: 0.9, ease: "easeOut" }}
             >
-              <BookingForm onSubmit={handleSearch} />
+              <BookingForm isAccountLoading={isAccountLoading} onSubmit={handleSearch} />
               <motion.div
                 aria-hidden
                 className="floating-badge hidden sm:block"
-                animate={shouldReduceMotion ? undefined : { y: [0, -14, 0], rotate: [0, 2, 0] }}
-                transition={{ duration: 5.2, repeat: Infinity, ease: "easeInOut" }}
+                animate={
+                  shouldReduceMotion
+                    ? undefined
+                    : { y: [0, -14, 0], rotate: [0, 2, 0] }
+                }
+                transition={{
+                  duration: 5.2,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                }}
                 style={{ rotate: shouldReduceMotion ? 0 : floatingRotate }}
               >
                 <span className="text-xs uppercase tracking-[0.26em] text-emerald-950/50">
                   Verified stay
                 </span>
-                <strong className="mt-1 block font-serif text-2xl text-emerald-950">24/7</strong>
-                <span className="text-sm text-emerald-950/65">Concierge support</span>
+                <strong className="mt-1 block font-serif text-2xl text-emerald-950">
+                  24/7
+                </strong>
+                <span className="text-sm text-emerald-950/65">
+                  Concierge support
+                </span>
               </motion.div>
             </motion.div>
           </div>
@@ -578,8 +637,15 @@ export default function Home() {
           </motion.button>
         </section>
 
-        <section id="about" data-snap className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8">
-          <div aria-hidden className="gradient-movement absolute inset-0 opacity-70" />
+        <section
+          id="about"
+          data-snap
+          className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8"
+        >
+          <div
+            aria-hidden
+            className="gradient-movement absolute inset-0 opacity-70"
+          />
           <div className="container relative z-10 mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[0.9fr_1.1fr]">
             <div className="gsap-reveal relative">
               <div className="about-image-shell about-floating-card">
@@ -610,14 +676,18 @@ export default function Home() {
             </div>
 
             <div className="gsap-reveal">
-              <SectionBadge icon={Waves}>Resort-grade product design</SectionBadge>
+              <SectionBadge icon={Waves}>
+                Resort-grade product design
+              </SectionBadge>
               <h2 className="mt-5 max-w-3xl font-serif text-4xl font-semibold tracking-[-0.045em] text-emerald-950 dark:text-white sm:text-5xl">
-                Pengalaman booking yang terasa tenang, indah, dan sangat praktis.
+                Pengalaman booking yang terasa tenang, indah, dan sangat
+                praktis.
               </h2>
               <p className="mt-5 max-w-2xl leading-8 text-emerald-950/66 dark:text-white/65">
-                Layout dibuat clean dan mobile-first: hero fullscreen, pencarian cepat,
-                rekomendasi villa, galeri visual, ulasan, FAQ, hingga fondasi informasi untuk
-                checkout, admin, kalender, dan notifikasi.
+                Layout dibuat clean dan mobile-first: hero fullscreen, pencarian
+                cepat, rekomendasi villa, galeri visual, ulasan, FAQ, hingga
+                fondasi informasi untuk checkout, admin, kalender, dan
+                notifikasi.
               </p>
 
               <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -643,11 +713,17 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="villas" data-snap className="relative px-4 py-24 sm:px-6 lg:px-8">
+        <section
+          id="villas"
+          data-snap
+          className="relative px-4 py-24 sm:px-6 lg:px-8"
+        >
           <div className="container mx-auto max-w-7xl">
             <div className="gsap-reveal flex flex-col justify-between gap-6 md:flex-row md:items-end">
               <div>
-                <SectionBadge icon={Heart}>Curated villa collection</SectionBadge>
+                <SectionBadge icon={Heart}>
+                  Curated villa collection
+                </SectionBadge>
                 <h2 className="mt-5 max-w-3xl font-serif text-4xl font-semibold tracking-[-0.045em] text-emerald-950 dark:text-white sm:text-5xl">
                   Villa pilihan dengan detail yang mudah dibandingkan.
                 </h2>
@@ -689,16 +765,22 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="gallery" className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8">
+        <section
+          id="gallery"
+          className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8"
+        >
           <div className="container mx-auto max-w-7xl">
             <div className="gsap-reveal mx-auto max-w-3xl text-center">
-              <SectionBadge icon={Sparkles}>Immersive visual gallery</SectionBadge>
+              <SectionBadge icon={Sparkles}>
+                Immersive visual gallery
+              </SectionBadge>
               <h2 className="mt-5 font-serif text-4xl font-semibold tracking-[-0.045em] text-emerald-950 dark:text-white sm:text-5xl">
                 Ruang, cahaya, dan tekstur dibuat berbicara.
               </h2>
               <p className="mt-5 leading-8 text-emerald-950/65 dark:text-white/62">
-                Section galeri memakai hover zoom, parallax halus, dan lazy loading untuk menjaga
-                nuansa premium tanpa mengorbankan performa.
+                Section galeri memakai hover zoom, parallax halus, dan lazy
+                loading untuk menjaga nuansa premium tanpa mengorbankan
+                performa.
               </p>
             </div>
 
@@ -719,7 +801,9 @@ export default function Home() {
                     decoding="async"
                   />
                   <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-emerald-950/78 to-transparent p-6 text-white">
-                    <p className="font-serif text-2xl font-semibold">{item.title}</p>
+                    <p className="font-serif text-2xl font-semibold">
+                      {item.title}
+                    </p>
                     <span className="mt-2 inline-block text-xs uppercase tracking-[0.24em] text-white/60">
                       Parallax layer
                     </span>
@@ -730,12 +814,19 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="reviews" className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8">
+        <section
+          id="reviews"
+          className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8"
+        >
           <div aria-hidden className="testimonial-bg absolute inset-0" />
           <motion.div
             aria-hidden
             className="absolute -right-24 top-24 size-72 rounded-full bg-amber-300/10 blur-3xl"
-            animate={shouldReduceMotion ? undefined : { y: [0, -28, 0], scale: [1, 1.08, 1] }}
+            animate={
+              shouldReduceMotion
+                ? undefined
+                : { y: [0, -28, 0], scale: [1, 1.08, 1] }
+            }
             transition={{ duration: 9, repeat: Infinity, ease: "easeInOut" }}
           />
           <div className="container relative z-10 mx-auto max-w-7xl">
@@ -752,7 +843,9 @@ export default function Home() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold">Ulasan terverifikasi</p>
-                  <p className="mt-0.5 text-xs text-white/55">Hanya dari tamu yang telah menginap</p>
+                  <p className="mt-0.5 text-xs text-white/55">
+                    Hanya dari tamu yang telah menginap
+                  </p>
                 </div>
               </div>
             </div>
@@ -760,7 +853,11 @@ export default function Home() {
             <div className="mt-12 grid gap-6 lg:grid-cols-[1.18fr_0.82fr]">
               <motion.article
                 className="group relative min-h-[34rem] overflow-hidden rounded-[2.25rem] border border-white/12 bg-emerald-950 text-white shadow-[0_36px_100px_rgba(0,0,0,0.3)]"
-                initial={shouldReduceMotion ? false : { opacity: 0, y: 36, scale: 0.97 }}
+                initial={
+                  shouldReduceMotion
+                    ? false
+                    : { opacity: 0, y: 36, scale: 0.97 }
+                }
                 whileInView={{ opacity: 1, y: 0, scale: 1 }}
                 viewport={{ once: true, amount: 0.22 }}
                 transition={{ duration: 0.75, ease: "easeOut" }}
@@ -778,7 +875,10 @@ export default function Home() {
                     <span className="rounded-full border border-white/18 bg-white/10 px-4 py-2 text-[0.68rem] font-semibold uppercase tracking-[0.2em] backdrop-blur-md">
                       Cerita pilihan
                     </span>
-                    <Quote className="size-10 text-amber-200/80" strokeWidth={1.4} />
+                    <Quote
+                      className="size-10 text-amber-200/80"
+                      strokeWidth={1.4}
+                    />
                   </div>
                   <blockquote className="max-w-3xl font-serif text-2xl font-medium leading-snug sm:text-3xl">
                     “{reviews[0].quote}”
@@ -786,11 +886,17 @@ export default function Home() {
                   <div className="mt-8 flex flex-col gap-5 border-t border-white/16 pt-6 sm:flex-row sm:items-end sm:justify-between">
                     <div>
                       <p className="font-semibold">{reviews[0].name}</p>
-                      <p className="mt-1 text-sm text-white/58">{reviews[0].role}</p>
+                      <p className="mt-1 text-sm text-white/58">
+                        {reviews[0].role}
+                      </p>
                     </div>
                     <div className="sm:text-right">
-                      <p className="text-sm font-semibold text-amber-100">{reviews[0].villa}</p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.15em] text-white/48">{reviews[0].stay}</p>
+                      <p className="text-sm font-semibold text-amber-100">
+                        {reviews[0].villa}
+                      </p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.15em] text-white/48">
+                        {reviews[0].stay}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -801,10 +907,18 @@ export default function Home() {
                   <motion.article
                     key={review.name}
                     className="card-lift flex min-h-[16rem] flex-col rounded-[2rem] border border-white/12 bg-white/10 p-7 text-white shadow-2xl backdrop-blur-2xl"
-                    initial={shouldReduceMotion ? false : { opacity: 0, y: 32, scale: 0.96 }}
+                    initial={
+                      shouldReduceMotion
+                        ? false
+                        : { opacity: 0, y: 32, scale: 0.96 }
+                    }
                     whileInView={{ opacity: 1, y: 0, scale: 1 }}
                     viewport={{ once: true, amount: 0.3 }}
-                    transition={{ delay: (index + 1) * 0.09, duration: 0.65, ease: "easeOut" }}
+                    transition={{
+                      delay: (index + 1) * 0.09,
+                      duration: 0.65,
+                      ease: "easeOut",
+                    }}
                   >
                     <div className="flex items-center justify-between gap-4">
                       <RatingStars
@@ -814,7 +928,10 @@ export default function Home() {
                         filledClassName="text-amber-200"
                         emptyClassName="text-white/18"
                       />
-                      <ShieldCheck className="size-5 text-emerald-200/70" aria-label="Ulasan terverifikasi" />
+                      <ShieldCheck
+                        className="size-5 text-emerald-200/70"
+                        aria-label="Ulasan terverifikasi"
+                      />
                     </div>
                     <blockquote className="mt-5 flex-1 text-base leading-7 text-white/82">
                       “{review.quote}”
@@ -829,11 +946,17 @@ export default function Home() {
                       />
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold">{review.name}</p>
-                        <p className="truncate text-sm text-white/55">{review.role}</p>
+                        <p className="truncate text-sm text-white/55">
+                          {review.role}
+                        </p>
                       </div>
                       <div className="hidden text-right sm:block">
-                        <p className="max-w-40 truncate text-xs font-semibold text-amber-100">{review.villa}</p>
-                        <p className="mt-1 text-[0.65rem] uppercase tracking-[0.12em] text-white/42">{review.stay}</p>
+                        <p className="max-w-40 truncate text-xs font-semibold text-amber-100">
+                          {review.villa}
+                        </p>
+                        <p className="mt-1 text-[0.65rem] uppercase tracking-[0.12em] text-white/42">
+                          {review.stay}
+                        </p>
                       </div>
                     </div>
                   </motion.article>
@@ -853,9 +976,16 @@ export default function Home() {
                 { value: "1.240+", label: "Ulasan tamu terverifikasi" },
                 { value: "98%", label: "Tamu ingin kembali" },
               ].map((metric) => (
-                <div key={metric.label} className="flex items-center justify-between gap-4 px-6 py-5 sm:block sm:text-center">
-                  <p className="font-serif text-2xl font-semibold text-amber-100">{metric.value}</p>
-                  <p className="text-xs uppercase tracking-[0.14em] text-white/48 sm:mt-1">{metric.label}</p>
+                <div
+                  key={metric.label}
+                  className="flex items-center justify-between gap-4 px-6 py-5 sm:block sm:text-center"
+                >
+                  <p className="font-serif text-2xl font-semibold text-amber-100">
+                    {metric.value}
+                  </p>
+                  <p className="text-xs uppercase tracking-[0.14em] text-white/48 sm:mt-1">
+                    {metric.label}
+                  </p>
                 </div>
               ))}
             </motion.div>
@@ -880,12 +1010,17 @@ export default function Home() {
                 Pertanyaan penting sebelum tamu menekan tombol booking.
               </h2>
               <p className="mt-5 leading-8 text-emerald-950/64 dark:text-white/62">
-                FAQ memakai accordion shadcn/Radix-style dengan micro-interaction halus dan konten
-                yang menyiapkan ekspektasi produk dari PRD.
+                FAQ memakai accordion shadcn/Radix-style dengan
+                micro-interaction halus dan konten yang menyiapkan ekspektasi
+                produk dari PRD.
               </p>
             </div>
 
-            <AccordionPrimitive.Root type="single" collapsible className="gsap-reveal space-y-4">
+            <AccordionPrimitive.Root
+              type="single"
+              collapsible
+              className="gsap-reveal space-y-4"
+            >
               {faqs.map((faq, index) => (
                 <AccordionPrimitive.Item
                   key={faq.question}
@@ -907,9 +1042,19 @@ export default function Home() {
           </div>
         </section>
 
-        <section id="cta" data-snap className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8">
-          <div aria-hidden className="cta-orb absolute -left-24 top-10 size-72 rounded-full bg-amber-300/30 blur-3xl" />
-          <div aria-hidden className="cta-orb absolute -right-28 bottom-0 size-96 rounded-full bg-emerald-500/25 blur-3xl" />
+        <section
+          id="cta"
+          data-snap
+          className="relative overflow-hidden px-4 py-24 sm:px-6 lg:px-8"
+        >
+          <div
+            aria-hidden
+            className="cta-orb absolute -left-24 top-10 size-72 rounded-full bg-amber-300/30 blur-3xl"
+          />
+          <div
+            aria-hidden
+            className="cta-orb absolute -right-28 bottom-0 size-96 rounded-full bg-emerald-500/25 blur-3xl"
+          />
           <div className="container relative z-10 mx-auto max-w-7xl overflow-hidden rounded-[2.5rem] bg-emerald-950 px-6 py-14 text-white shadow-[0_35px_100px_rgba(4,34,28,0.28)] sm:px-10 lg:px-16">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_10%,rgba(247,217,140,0.24),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.08),transparent)]" />
             <div className="relative grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
@@ -918,25 +1063,33 @@ export default function Home() {
                   Premium booking system
                 </SectionBadge>
                 <h2 className="mt-6 font-serif text-4xl font-semibold tracking-[-0.045em] sm:text-5xl">
-                  Siap membawa brand villa ke pengalaman digital yang terasa mahal.
+                  Siap membawa brand villa ke pengalaman digital yang terasa
+                  mahal.
                 </h2>
                 <p className="mt-5 max-w-2xl leading-8 text-white/68">
-                  Landing page ini sudah mengunci arah visual, animasi, struktur informasi, dan
-                  interaksi utama untuk pengembangan booking, pembayaran, akun, dan admin.
+                  Landing page ini sudah mengunci arah visual, animasi, struktur
+                  informasi, dan interaksi utama untuk pengembangan booking,
+                  pembayaran, akun, dan admin.
                 </p>
               </div>
               <div className="rounded-[2rem] border border-white/12 bg-white/10 p-5 backdrop-blur-xl">
                 <div className="grid gap-3">
-                  {["Search availability", "Review total price", "Secure checkout", "Admin calendar sync"].map(
-                    (step, index) => (
-                      <div key={step} className="flex items-center gap-3 rounded-2xl bg-white/8 p-4">
-                        <span className="grid size-9 place-items-center rounded-full bg-amber-200 text-sm font-bold text-emerald-950">
-                          {index + 1}
-                        </span>
-                        <span className="font-medium text-white/85">{step}</span>
-                      </div>
-                    ),
-                  )}
+                  {[
+                    "Search availability",
+                    "Review total price",
+                    "Secure checkout",
+                    "Admin calendar sync",
+                  ].map((step, index) => (
+                    <div
+                      key={step}
+                      className="flex items-center gap-3 rounded-2xl bg-white/8 p-4"
+                    >
+                      <span className="grid size-9 place-items-center rounded-full bg-amber-200 text-sm font-bold text-emerald-950">
+                        {index + 1}
+                      </span>
+                      <span className="font-medium text-white/85">{step}</span>
+                    </div>
+                  ))}
                 </div>
                 <Button
                   className="mt-5 w-full"
@@ -963,6 +1116,8 @@ export default function Home() {
 }
 
 function Navbar({
+  accountHref,
+  accountName,
   activeSection,
   isScrolled,
   onOpenDrawer,
@@ -970,6 +1125,8 @@ function Navbar({
   onToggleTheme,
   theme,
 }: {
+  accountHref: string;
+  accountName?: string;
   activeSection: string;
   isScrolled: boolean;
   onOpenDrawer: () => void;
@@ -1002,10 +1159,22 @@ function Navbar({
             V
           </span>
           <span>
-            <span className={cn("block font-serif text-xl font-semibold", isScrolled ? "text-emerald-950 dark:text-white" : "text-white")}>
+            <span
+              className={cn(
+                "block font-serif text-xl font-semibold",
+                isScrolled ? "text-emerald-950 dark:text-white" : "text-white",
+              )}
+            >
               Villaku
             </span>
-            <span className={cn("block text-[0.62rem] uppercase tracking-[0.24em]", isScrolled ? "text-emerald-950/48 dark:text-white/45" : "text-white/58")}>
+            <span
+              className={cn(
+                "block text-[0.62rem] uppercase tracking-[0.24em]",
+                isScrolled
+                  ? "text-emerald-950/48 dark:text-white/45"
+                  : "text-white/58",
+              )}
+            >
               Private Resorts
             </span>
           </span>
@@ -1044,30 +1213,17 @@ function Navbar({
           </Button>
           <Button
             asChild
-            variant="ghost"
-            size="sm"
-            className={cn(
-              "hidden lg:inline-flex",
-              !isScrolled && "text-white hover:bg-white/12 hover:text-white",
-            )}
-          >
-            <Link href="/login">
-              <UserRound />
-              <span className="hidden xl:inline">Login User</span>
-            </Link>
-          </Button>
-          <Button
-            asChild
             variant={isScrolled ? "outline" : "ghost"}
             size="sm"
             className={cn(
               "hidden lg:inline-flex",
-              !isScrolled && "border border-white/18 bg-white/10 text-white hover:bg-white/18 hover:text-white",
+              !isScrolled &&
+                "border border-white/18 bg-white/10 text-white hover:bg-white/18 hover:text-white",
             )}
           >
-            <Link href="/login?mode=admin&callbackUrl=/admin/villas">
-              <ShieldCheck />
-              <span className="hidden 2xl:inline">Login Admin</span>
+            <Link href={accountName ? accountHref : "/login"}>
+              <UserRound />
+              <span>{accountName ? accountName.split(/\s+/)[0] : "Login"}</span>
             </Link>
           </Button>
           <Button
@@ -1076,7 +1232,10 @@ function Navbar({
             size="icon"
             onClick={onOpenDrawer}
             aria-label="Buka menu"
-            className={cn("lg:hidden", !isScrolled && "border-white/20 bg-white/12 text-white")}
+            className={cn(
+              "lg:hidden",
+              !isScrolled && "border-white/20 bg-white/12 text-white",
+            )}
           >
             <Menu />
           </Button>
@@ -1087,6 +1246,8 @@ function Navbar({
 }
 
 function MobileDrawer({
+  accountHref,
+  accountName,
   activeSection,
   open,
   onClose,
@@ -1094,6 +1255,8 @@ function MobileDrawer({
   onToggleTheme,
   theme,
 }: {
+  accountHref: string;
+  accountName?: string;
   activeSection: string;
   open: boolean;
   onClose: () => void;
@@ -1132,7 +1295,13 @@ function MobileDrawer({
                   Mobile menu
                 </p>
               </div>
-              <Button type="button" size="icon" variant="outline" onClick={onClose} aria-label="Tutup drawer">
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                onClick={onClose}
+                aria-label="Tutup drawer"
+              >
                 <X />
               </Button>
             </div>
@@ -1161,29 +1330,34 @@ function MobileDrawer({
               onClick={onToggleTheme}
               className="mt-5 flex w-full items-center justify-between rounded-2xl border border-emerald-900/10 bg-white/60 px-4 py-4 text-emerald-950 dark:border-white/10 dark:bg-white/6 dark:text-white"
             >
-              {theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              {theme === "dark"
+                ? "Switch to light mode"
+                : "Switch to dark mode"}
+              {theme === "dark" ? (
+                <Sun className="size-4" />
+              ) : (
+                <Moon className="size-4" />
+              )}
             </button>
 
-            <div className="mt-5 grid grid-cols-2 gap-2">
-              <Button asChild variant="outline" className="w-full">
-                <Link href="/login">
-                  <UserRound /> Login User
-                </Link>
-              </Button>
-              <Button asChild variant="default" className="w-full">
-                <Link href="/login?mode=admin&callbackUrl=/admin/villas">
-                  <ShieldCheck /> Login Admin
-                </Link>
-              </Button>
-            </div>
+            <Button asChild variant="default" className="mt-5 w-full">
+              <Link href={accountName ? accountHref : "/login"} onClick={onClose}>
+                <UserRound /> {accountName ? `Akun ${accountName.split(/\s+/)[0]}` : "Login"}
+              </Link>
+            </Button>
 
             <div className="mt-6 rounded-[1.5rem] bg-emerald-950 p-5 text-white">
               <p className="font-serif text-2xl">Book a private escape</p>
               <p className="mt-2 text-sm leading-6 text-white/60">
-                Cari villa, cek tanggal, lalu lanjutkan ke alur checkout premium.
+                Cari villa, cek tanggal, lalu lanjutkan ke alur checkout
+                premium.
               </p>
-              <Button className="mt-4 w-full" variant="gold" type="button" onClick={() => onScrollTo("home")}>
+              <Button
+                className="mt-4 w-full"
+                variant="gold"
+                type="button"
+                onClick={() => onScrollTo("home")}
+              >
                 Start search
               </Button>
             </div>
@@ -1194,7 +1368,13 @@ function MobileDrawer({
   );
 }
 
-function BookingForm({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function BookingForm({
+  isAccountLoading,
+  onSubmit,
+}: {
+  isAccountLoading: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
   const [isChecking, setIsChecking] = useState(false);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -1212,7 +1392,9 @@ function BookingForm({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement
       <div className="relative">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-white/56">Search booking</p>
+            <p className="text-xs uppercase tracking-[0.28em] text-white/56">
+              Search booking
+            </p>
             <h2 className="mt-2 font-serif text-3xl font-semibold text-white">
               Rancang stay Anda
             </h2>
@@ -1226,7 +1408,11 @@ function BookingForm({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement
         <div className="mt-6 grid gap-3">
           <label className="booking-field">
             <span>Lokasi</span>
-            <select name="location" defaultValue="Semua Lokasi" aria-label="Pilih lokasi villa">
+            <select
+              name="location"
+              defaultValue="Semua Lokasi"
+              aria-label="Pilih lokasi villa"
+            >
               <option value="Semua Lokasi">Bali - All destinations</option>
               <option value="Uluwatu">Uluwatu</option>
               <option value="Ubud">Ubud</option>
@@ -1239,11 +1425,21 @@ function BookingForm({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="booking-field">
               <span>Check-in</span>
-              <input name="checkIn" type="date" defaultValue="2026-08-14" aria-label="Tanggal check-in" />
+              <input
+                name="checkIn"
+                type="date"
+                defaultValue="2026-08-14"
+                aria-label="Tanggal check-in"
+              />
             </label>
             <label className="booking-field">
               <span>Check-out</span>
-              <input name="checkOut" type="date" defaultValue="2026-08-17" aria-label="Tanggal check-out" />
+              <input
+                name="checkOut"
+                type="date"
+                defaultValue="2026-08-17"
+                aria-label="Tanggal check-out"
+              />
             </label>
           </div>
 
@@ -1270,18 +1466,29 @@ function BookingForm({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement
           </div>
           <div className="mt-4 grid gap-2 text-sm text-white/62">
             <span className="flex items-center justify-between">
-              Villa subtotal <strong className="font-medium text-white/78">3 malam</strong>
+              Villa subtotal{" "}
+              <strong className="font-medium text-white/78">3 malam</strong>
             </span>
             <span className="flex items-center justify-between">
-              Tax & service <strong className="font-medium text-white/78">Included</strong>
+              Tax & service{" "}
+              <strong className="font-medium text-white/78">Included</strong>
             </span>
           </div>
         </div>
 
-        <Button className="mt-5 w-full" variant="gold" size="lg" type="submit">
+        <Button
+          className="mt-5 w-full"
+          variant="gold"
+          size="lg"
+          type="submit"
+          disabled={isChecking || isAccountLoading}
+        >
           <Search />
-          Cek ketersediaan
+          {isAccountLoading ? "Memeriksa akun..." : "Cek ketersediaan"}
         </Button>
+        <p className="mt-3 text-center text-xs leading-5 text-white/52">
+          Login diperlukan agar booking, pembayaran, dan data tamu memakai identitas akun yang sama.
+        </p>
       </div>
     </form>
   );
@@ -1320,9 +1527,17 @@ function TextReveal({ text }: { text: string }) {
         <motion.span
           key={`${word}-${index}`}
           className="inline-block pr-[0.18em]"
-          initial={shouldReduceMotion ? false : { opacity: 0, y: 28, rotateX: -18, filter: "blur(12px)" }}
+          initial={
+            shouldReduceMotion
+              ? false
+              : { opacity: 0, y: 28, rotateX: -18, filter: "blur(12px)" }
+          }
           animate={{ opacity: 1, y: 0, rotateX: 0, filter: "blur(0px)" }}
-          transition={{ delay: 0.08 + index * 0.045, duration: 0.72, ease: "easeOut" }}
+          transition={{
+            delay: 0.08 + index * 0.045,
+            duration: 0.72,
+            ease: "easeOut",
+          }}
         >
           {word}
         </motion.span>
@@ -1389,8 +1604,12 @@ function FeatureCard({
       <div className="grid size-12 place-items-center rounded-2xl bg-emerald-700 text-white shadow-lg">
         <IconComponent className="size-5" />
       </div>
-      <h3 className="mt-5 font-serif text-xl font-semibold text-emerald-950 dark:text-white">{title}</h3>
-      <p className="mt-3 text-sm leading-7 text-emerald-950/62 dark:text-white/58">{description}</p>
+      <h3 className="mt-5 font-serif text-xl font-semibold text-emerald-950 dark:text-white">
+        {title}
+      </h3>
+      <p className="mt-3 text-sm leading-7 text-emerald-950/62 dark:text-white/58">
+        {description}
+      </p>
     </article>
   );
 }
@@ -1409,7 +1628,13 @@ function VillaCard({
       className="card-lift overflow-hidden rounded-[2rem] border border-emerald-900/10 bg-white/78 shadow-[0_24px_70px_rgba(4,34,28,0.1)] backdrop-blur-xl dark:border-white/10 dark:bg-white/5"
     >
       <div className="image-hover relative aspect-[1.16] overflow-hidden bg-emerald-950">
-        <img src={villa.image} alt={villa.name} className="h-full w-full object-cover" loading="lazy" decoding="async" />
+        <img
+          src={villa.image}
+          alt={villa.name}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          decoding="async"
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-emerald-950/58 via-transparent to-transparent" />
         <button
           type="button"
@@ -1420,8 +1645,12 @@ function VillaCard({
         </button>
         <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between gap-3 text-white">
           <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-white/58">{villa.location}</p>
-            <h3 className="mt-1 font-serif text-2xl font-semibold">{villa.name}</h3>
+            <p className="text-xs uppercase tracking-[0.2em] text-white/58">
+              {villa.location}
+            </p>
+            <h3 className="mt-1 font-serif text-2xl font-semibold">
+              {villa.name}
+            </h3>
           </div>
           <span className="flex items-center gap-1 rounded-full bg-white/14 px-3 py-2 text-sm backdrop-blur-xl">
             <Star className="size-4 fill-amber-200 text-amber-200" />
@@ -1443,9 +1672,15 @@ function VillaCard({
         </div>
 
         <div className="mt-5 grid grid-cols-3 gap-2 text-sm text-emerald-950/58 dark:text-white/58">
-          <span className="flex items-center gap-1.5"><Users className="size-4" /> {villa.guests}</span>
-          <span className="flex items-center gap-1.5"><BedDouble className="size-4" /> {villa.beds}</span>
-          <span className="flex items-center gap-1.5"><Bath className="size-4" /> {villa.baths}</span>
+          <span className="flex items-center gap-1.5">
+            <Users className="size-4" /> {villa.guests}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <BedDouble className="size-4" /> {villa.beds}
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Bath className="size-4" /> {villa.baths}
+          </span>
         </div>
 
         <div className="mt-6 flex items-center justify-between gap-4">
@@ -1523,14 +1758,23 @@ function TourDialog({
               Konsep virtual villa tour
             </DialogPrimitive.Title>
             <DialogPrimitive.Description className="mt-3 leading-7 text-emerald-950/62 dark:text-white/62">
-              Modal ini menunjukkan pola interaksi untuk preview video, gallery detail, atau
-              langkah awal booking tanpa meninggalkan halaman utama.
+              Modal ini menunjukkan pola interaksi untuk preview video, gallery
+              detail, atau langkah awal booking tanpa meninggalkan halaman
+              utama.
             </DialogPrimitive.Description>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Button variant="default" type="button" onClick={() => onOpenChange(false)}>
+              <Button
+                variant="default"
+                type="button"
+                onClick={() => onOpenChange(false)}
+              >
                 Lanjut eksplor villa
               </Button>
-              <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => onOpenChange(false)}
+              >
                 Tutup preview
               </Button>
             </div>
@@ -1552,7 +1796,13 @@ function TourDialog({
   );
 }
 
-function BackToTop({ visible, onClick }: { visible: boolean; onClick: () => void }) {
+function BackToTop({
+  visible,
+  onClick,
+}: {
+  visible: boolean;
+  onClick: () => void;
+}) {
   return (
     <AnimatePresence>
       {visible ? (
@@ -1579,7 +1829,9 @@ function Footer({ onScrollTo }: { onScrollTo: (id: string) => void }) {
     <footer className="border-t border-emerald-900/10 px-4 py-10 dark:border-white/10 sm:px-6 lg:px-8">
       <div className="container mx-auto flex max-w-7xl flex-col gap-6 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="font-serif text-2xl font-semibold text-emerald-950 dark:text-white">Villaku</p>
+          <p className="font-serif text-2xl font-semibold text-emerald-950 dark:text-white">
+            Villaku
+          </p>
           <p className="mt-1 text-sm text-emerald-950/52 dark:text-white/52">
             Luxury villa booking frontend crafted for premium hospitality.
           </p>

@@ -24,6 +24,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { RatingStars } from "@/components/rating-stars";
 import { Button } from "@/components/ui/button";
+import { useAuthSession } from "@/components/use-auth-session";
 import { cn } from "@/lib/utils";
 
 const reviewSchema = z.object({
@@ -60,6 +61,7 @@ const ratingLabels = ["", "Kurang", "Cukup", "Baik", "Sangat baik", "Istimewa"];
 
 export default function WriteReviewPage() {
   const shouldReduceMotion = useReducedMotion();
+  const { profile } = useAuthSession();
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -121,7 +123,7 @@ export default function WriteReviewPage() {
         ...formValues,
         bookingId: "VLK-260214-1038",
         villaId: "nara-jungle",
-        author: "Maya Putri",
+        author: profile?.name ?? "Pengguna VillaKu",
         createdAt: new Date().toISOString(),
       }),
     );

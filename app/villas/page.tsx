@@ -11,6 +11,7 @@ import {
   Filter,
   Heart,
   Home,
+  LogOut,
   MapPin,
   Moon,
   Search,
@@ -18,6 +19,7 @@ import {
   Sparkles,
   Star,
   Sun,
+  UserRound,
   Users,
   Waves,
   Wifi,
@@ -25,6 +27,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useAuthSession } from "@/components/use-auth-session";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -261,6 +264,8 @@ export default function VillaListPage() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const shouldReduceMotion = useReducedMotion();
+  const { profile, isLoading, initials, firstName, home, logout } =
+    useAuthSession();
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("villaku-theme");
@@ -379,6 +384,50 @@ export default function VillaListPage() {
                   Landing
                 </Link>
               </Button>
+              {isLoading ? (
+                <div
+                  className="h-10 w-24 animate-pulse rounded-full bg-emerald-950/8 dark:bg-white/10 sm:w-32"
+                  aria-label="Memeriksa status login"
+                />
+              ) : profile ? (
+                <>
+                  <Link
+                    href={home}
+                    className="flex h-10 min-w-0 items-center gap-2 rounded-full border border-emerald-900/10 bg-emerald-50/80 px-1.5 pr-3 text-emerald-950 transition hover:-translate-y-0.5 hover:bg-emerald-100 dark:border-white/10 dark:bg-emerald-300/10 dark:text-white dark:hover:bg-emerald-300/15"
+                    aria-label={`Buka akun ${profile.name}`}
+                  >
+                    <span className="grid size-7 shrink-0 place-items-center rounded-full bg-emerald-700 text-[0.62rem] font-bold text-white">
+                      {initials}
+                    </span>
+                    <span className="min-w-0 leading-tight">
+                      <span className="hidden text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-emerald-800/55 dark:text-emerald-100/55 md:block">
+                        Sudah login
+                      </span>
+                      <span className="block max-w-20 truncate text-xs font-bold sm:max-w-28">
+                        {firstName}
+                      </span>
+                    </span>
+                  </Link>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => void logout()}
+                    aria-label={`Keluar dari akun ${profile.name}`}
+                    title="Keluar"
+                  >
+                    <LogOut />
+                  </Button>
+                </>
+              ) : (
+                <Button asChild variant="outline" className="px-3 sm:px-4">
+                  <Link href="/login?callbackUrl=%2Fvillas">
+                    <UserRound />
+                    <span className="hidden sm:inline">Login untuk pesan</span>
+                    <span className="sm:hidden">Login</span>
+                  </Link>
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"

@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   CreditCard,
   Gift,
+  Loader2,
   Mail,
   MapPin,
   Phone,
@@ -17,15 +18,20 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { bookingDraftStorageKey, type BookingDraft } from "@/lib/booking-draft";
+import type { BookingStoreRecord } from "@/lib/booking-store";
 import { cn } from "@/lib/utils";
 import { formatRupiah } from "@/lib/villa-data";
 
 export default function BookingSummaryPage() {
+  const router = useRouter();
   const [draft, setDraft] = useState<BookingDraft | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [isCreatingBooking, setIsCreatingBooking] = useState(false);
+  const [bookingError, setBookingError] = useState("");
   const shouldReduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -43,6 +49,71 @@ export default function BookingSummaryPage() {
     if (!draft) return "";
     return `${formatDisplayDate(draft.stay.checkIn)} - ${formatDisplayDate(draft.stay.checkOut)}`;
   }, [draft]);
+
+  const createBookingAndContinue = async () => {
+    if (!draft || isCreatingBooking) return;
+
+    if (draft.status === "WAITING_PAYMENT") {
+      router.push(`/payment?bookingId=${encodeURIComponent(draft.id)}`);
+      return;
+    }
+
+    setIsCreatingBooking(true);
+    setBookingError("");
+
+    try {
+      const response = await fetch("/api/bookings", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          villaId: draft.villa.id,
+          checkIn: draft.stay.checkIn,
+          checkOut: draft.stay.checkOut,
+          guests: draft.stay.guests,
+          guestName: draft.guest.name,
+          guestEmail: draft.guest.email,
+          guestPhone: draft.guest.phone,
+          promoCode: draft.promo.code,
+          addOns: draft.addOns.map((addOn) => addOn.id),
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        message?: string;
+        data?: { booking?: BookingStoreRecord };
+      } | null;
+
+      if (response.status === 401) {
+        router.push(`/login?callbackUrl=${encodeURIComponent("/booking/summary")}`);
+        return;
+      }
+
+      const booking = payload?.data?.booking;
+      if (!response.ok || !booking) {
+        throw new Error(payload?.message || "Booking belum dapat dibuat.");
+      }
+
+      const persistedDraft: BookingDraft = {
+        ...draft,
+        id: booking.bookingCode,
+        status: booking.status,
+        guest: booking.guest,
+      };
+      window.sessionStorage.setItem(bookingDraftStorageKey, JSON.stringify(persistedDraft));
+      setDraft(persistedDraft);
+      router.push(`/payment?bookingId=${encodeURIComponent(booking.bookingCode)}`);
+    } catch (error) {
+      setBookingError(
+        error instanceof Error
+          ? error.message
+          : "Booking belum dapat dibuat. Silakan coba kembali.",
+      );
+    } finally {
+      setIsCreatingBooking(false);
+    }
+  };
 
   if (!loaded) {
     return (
@@ -258,18 +329,28 @@ export default function BookingSummaryPage() {
                   <div className="flex items-start gap-3">
                     <ShieldCheck className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-200" />
                     <p>
-                      Ini masih ringkasan frontend mock. Konfirmasi booking, invoice, dan pembayaran akan disambungkan di task berikutnya.
+                      Saat dilanjutkan, booking akan dicatat atas nama akun login dan langsung tersedia untuk Receptionist serta Finance.
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-5 grid gap-3">
-                  <Button asChild className="w-full" variant="gold" size="lg">
-                    <Link href="/payment">
-                      <CreditCard />
-                      Pilih metode pembayaran
-                    </Link>
+                  <Button
+                    className="w-full"
+                    variant="gold"
+                    size="lg"
+                    type="button"
+                    onClick={() => void createBookingAndContinue()}
+                    disabled={isCreatingBooking}
+                  >
+                    {isCreatingBooking ? <Loader2 className="animate-spin" /> : <CreditCard />}
+                    {isCreatingBooking ? "Mencatat booking..." : "Pilih metode pembayaran"}
                   </Button>
+                  {bookingError ? (
+                    <p className="rounded-2xl border border-red-300/35 bg-red-100/55 px-4 py-3 text-sm text-red-800 dark:border-red-300/20 dark:bg-red-400/10 dark:text-red-100">
+                      {bookingError}
+                    </p>
+                  ) : null}
                   <Button asChild className="w-full" variant="outline">
                     <Link href={`/villas/${draft.villa.id}`}>Ubah detail booking</Link>
                   </Button>
