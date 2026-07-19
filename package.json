@@ -16,7 +16,7 @@
     "db:generate": "drizzle-kit generate",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma db push",
+    "prisma:migrate": "prisma db push --skip-generate",
     "db:seed": "node prisma/seed.mjs",
     "db:setup:postgresql": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-postgresql-db.ps1"
   },

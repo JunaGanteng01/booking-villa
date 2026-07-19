@@ -12,9 +12,11 @@ import {
   Clock3,
   CreditCard,
   Download,
+  DoorOpen,
   Heart,
   Home,
   LogOut,
+  LoaderCircle,
   MapPin,
   Moon,
   Pencil,
@@ -28,16 +30,17 @@ import {
   WalletCards,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { NotificationBell } from "@/components/notification-bell";
 import { useAppNotifications } from "@/components/notification-root";
 import { type AuthSessionProfile, useAuthSession } from "@/components/use-auth-session";
 
 type DashboardSection = "overview" | "bookings" | "wishlist" | "profile";
-type BookingStatus = "upcoming" | "completed" | "cancelled";
+type BookingStatus = "upcoming" | "active" | "checkout_requested" | "completed" | "cancelled";
 
 type Booking = {
   id: string;
+  code: string;
   villaId: string;
   villaName: string;
   location: string;
@@ -49,6 +52,32 @@ type Booking = {
   total: number;
   status: BookingStatus;
   paymentLabel: string;
+  checkout: {
+    status: "ACTIVE" | "CHECKOUT_REQUESTED" | "CHECKED_OUT" | null;
+    statusLabel: string;
+    canRequest: boolean;
+    requestedAt: string | null;
+    checkedOutAt: string | null;
+    processedBy: { name: string | null; email: string } | null;
+    history: Array<{
+      id: string;
+      toStatus: "ACTIVE" | "CHECKOUT_REQUESTED" | "CHECKED_OUT";
+      notes: string | null;
+      actor: { name: string | null; email: string } | null;
+      createdAt: string;
+    }>;
+  };
+};
+
+type BookingApiItem = {
+  bookingId: string;
+  bookingCode: string;
+  bookingStatus: string;
+  paymentStatus: string;
+  villa: { id: string; name: string; location: string; image: string | null };
+  stay: { checkIn: string; checkOut: string; nights: number; guests: number };
+  totalAmount: number;
+  checkout: Booking["checkout"];
 };
 
 type WishlistVilla = {
@@ -75,68 +104,8 @@ const dashboardNav: Array<{
   { id: "profile", label: "Profil saya", mobileLabel: "Profil", icon: UserRound },
 ];
 
-const bookings: Booking[] = [
-  {
-    id: "VLK-260823-1482",
-    villaId: "aruna-cliffside",
-    villaName: "Villa Aruna Cliffside",
-    location: "Uluwatu, Bali",
-    image:
-      "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1400&q=85",
-    checkIn: "2026-08-23",
-    checkOut: "2026-08-27",
-    nights: 4,
-    guests: 6,
-    total: 21312000,
-    status: "upcoming",
-    paymentLabel: "Lunas",
-  },
-  {
-    id: "VLK-260214-1038",
-    villaId: "nara-jungle",
-    villaName: "Nara Jungle Residence",
-    location: "Ubud, Bali",
-    image:
-      "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1400&q=85",
-    checkIn: "2026-02-14",
-    checkOut: "2026-02-17",
-    nights: 3,
-    guests: 4,
-    total: 12154500,
-    status: "completed",
-    paymentLabel: "Selesai",
-  },
-  {
-    id: "VLK-251129-0887",
-    villaId: "sagara-beach",
-    villaName: "Sagara Beach House",
-    location: "Canggu, Bali",
-    image:
-      "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=1400&q=85",
-    checkIn: "2025-11-29",
-    checkOut: "2025-12-02",
-    nights: 3,
-    guests: 8,
-    total: 17482500,
-    status: "completed",
-    paymentLabel: "Selesai",
-  },
-  {
-    id: "VLK-250918-0644",
-    villaId: "luna-honeymoon",
-    villaName: "Luna Honeymoon Villa",
-    location: "Seminyak, Bali",
-    image:
-      "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1400&q=85",
-    checkIn: "2025-09-18",
-    checkOut: "2025-09-21",
-    nights: 3,
-    guests: 2,
-    total: 9823500,
-    status: "cancelled",
-    paymentLabel: "Refund selesai",
-  },
-];
+const fallbackVillaImage =
+  "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1400&q=85";
 
 const initialWishlist: WishlistVilla[] = [
   {
@@ -180,6 +149,8 @@ const initialWishlist: WishlistVilla[] = [
 const bookingFilters: Array<{ id: "all" | BookingStatus; label: string }> = [
   { id: "all", label: "Semua" },
   { id: "upcoming", label: "Akan datang" },
+  { id: "active", label: "Sedang menginap" },
+  { id: "checkout_requested", label: "Checkout diminta" },
   { id: "completed", label: "Selesai" },
   { id: "cancelled", label: "Dibatalkan" },
 ];
@@ -204,6 +175,9 @@ export default function CustomerDashboardPage() {
   const [bookingFilter, setBookingFilter] = useState<"all" | BookingStatus>("all");
   const [wishlist, setWishlist] = useState(initialWishlist);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  const [bookingItems, setBookingItems] = useState<Booking[]>([]);
+  const [bookingLoading, setBookingLoading] = useState(true);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem("villaku-theme");
@@ -214,9 +188,38 @@ export default function CustomerDashboardPage() {
     document.documentElement.classList.toggle("dark", nextTheme === "dark");
   }, []);
 
+  const loadBookings = useCallback(async (quiet = false) => {
+    if (!quiet) setBookingLoading(true);
+    try {
+      const response = await fetch("/api/bookings", {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json()) as { bookings?: BookingApiItem[]; message?: string };
+      if (!response.ok) throw new Error(payload.message || "Riwayat booking gagal dimuat.");
+      setBookingItems((payload.bookings ?? []).map(toDashboardBooking));
+      setBookingError(null);
+    } catch (loadError) {
+      setBookingError(loadError instanceof Error ? loadError.message : "Riwayat booking gagal dimuat.");
+    } finally {
+      setBookingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBookings();
+    const interval = window.setInterval(() => void loadBookings(true), 10_000);
+    const onFocus = () => void loadBookings(true);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [loadBookings]);
+
   const visibleBookings = useMemo(
-    () => bookings.filter((booking) => bookingFilter === "all" || booking.status === bookingFilter),
-    [bookingFilter],
+    () => bookingItems.filter((booking) => bookingFilter === "all" || booking.status === bookingFilter),
+    [bookingFilter, bookingItems],
   );
 
   const toggleTheme = () => {
@@ -420,6 +423,7 @@ export default function CustomerDashboardPage() {
                   wishlistCount={wishlist.length}
                   onOpenBookings={() => setActiveSection("bookings")}
                   onOpenWishlist={() => setActiveSection("wishlist")}
+                  bookings={bookingItems}
                 />
               ) : null}
 
@@ -429,6 +433,14 @@ export default function CustomerDashboardPage() {
                   filter={bookingFilter}
                   onFilterChange={setBookingFilter}
                   shouldReduceMotion={Boolean(shouldReduceMotion)}
+                  loading={bookingLoading}
+                  error={bookingError}
+                  onRefresh={() => void loadBookings()}
+                  onCheckoutUpdated={(updated) =>
+                    setBookingItems((current) =>
+                      current.map((booking) => booking.id === updated.id ? updated : booking),
+                    )
+                  }
                 />
               ) : null}
 
@@ -494,16 +506,23 @@ function OverviewSection({
   wishlistCount,
   onOpenBookings,
   onOpenWishlist,
+  bookings,
 }: {
   shouldReduceMotion: boolean;
   firstName: string;
   wishlistCount: number;
   onOpenBookings: () => void;
   onOpenWishlist: () => void;
+  bookings: Booking[];
 }) {
+  const nextBooking =
+    bookings.find((booking) => booking.status === "active" || booking.status === "checkout_requested") ??
+    bookings.find((booking) => booking.status === "upcoming") ??
+    bookings[0];
+  const completed = bookings.filter((booking) => booking.status === "completed");
   const stats = [
-    { label: "Total perjalanan", value: "4", helper: "Sejak Nov 2025", icon: Briefcase },
-    { label: "Malam menginap", value: "13", helper: "+4 malam bulan depan", icon: Moon },
+    { label: "Total perjalanan", value: String(bookings.length), helper: "Booking dari akun Anda", icon: Briefcase },
+    { label: "Malam menginap", value: String(completed.reduce((total, booking) => total + booking.nights, 0)), helper: "Masa inap yang sudah selesai", icon: Moon },
     { label: "Villa tersimpan", value: String(wishlistCount), helper: "Pilihan favorit Anda", icon: Heart },
     { label: "Circle points", value: "2.480", helper: "520 poin menuju Gold", icon: Sparkles },
   ];
@@ -518,13 +537,13 @@ function OverviewSection({
         <motion.div variants={reveal} className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-700 dark:text-emerald-300">
-              Senin, 13 Juli 2026
+              {new Intl.DateTimeFormat("id-ID", { dateStyle: "full" }).format(new Date())}
             </p>
             <h1 className="mt-3 font-serif text-4xl font-semibold leading-none tracking-[-0.04em] text-emerald-950 dark:text-white sm:text-5xl">
               Selamat datang, {firstName}.
             </h1>
             <p className="mt-3 text-sm leading-6 text-emerald-950/54 dark:text-white/52 sm:text-base">
-              Perjalanan berikutnya tinggal 41 hari lagi. Semua detail Anda sudah siap.
+              Semua reservasi, pembayaran, dan status checkout akun Anda tersinkron dengan PostgreSQL.
             </p>
           </div>
           <Link
@@ -536,68 +555,42 @@ function OverviewSection({
           </Link>
         </motion.div>
 
-        <motion.article
-          variants={reveal}
-          className="relative mt-7 overflow-hidden rounded-[2rem] bg-emerald-950 text-white shadow-[0_28px_90px_rgba(4,34,28,0.18)]"
-        >
-          <div
-            aria-hidden
-            className="absolute inset-0 bg-[radial-gradient(circle_at_18%_30%,rgba(16,185,129,0.23),transparent_23rem),radial-gradient(circle_at_84%_4%,rgba(247,217,140,0.2),transparent_22rem)]"
-          />
-          <div className="relative grid lg:grid-cols-[1fr_22rem]">
-            <div className="p-6 sm:p-8 lg:p-10">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-emerald-400/16 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-emerald-200 ring-1 ring-emerald-300/18">
-                  Perjalanan berikutnya
-                </span>
-                <span className="rounded-full bg-amber-300/14 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-amber-200 ring-1 ring-amber-200/18">
-                  Lunas
-                </span>
+        {nextBooking ? (
+          <motion.article variants={reveal} className="relative mt-7 overflow-hidden rounded-[2rem] bg-emerald-950 text-white shadow-[0_28px_90px_rgba(4,34,28,0.18)]">
+            <div aria-hidden className="absolute inset-0 bg-[radial-gradient(circle_at_18%_30%,rgba(16,185,129,0.23),transparent_23rem),radial-gradient(circle_at_84%_4%,rgba(247,217,140,0.2),transparent_22rem)]" />
+            <div className="relative grid lg:grid-cols-[1fr_22rem]">
+              <div className="p-6 sm:p-8 lg:p-10">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-emerald-400/16 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-emerald-200 ring-1 ring-emerald-300/18">
+                    {nextBooking.status === "active" || nextBooking.status === "checkout_requested" ? "Sedang menginap" : "Perjalanan berikutnya"}
+                  </span>
+                  <span className="rounded-full bg-amber-300/14 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-amber-200 ring-1 ring-amber-200/18">{nextBooking.paymentLabel}</span>
+                </div>
+                <h2 className="mt-6 max-w-xl font-serif text-4xl font-semibold tracking-[-0.035em] sm:text-5xl">{nextBooking.villaName}</h2>
+                <p className="mt-3 flex items-center gap-2 text-sm text-white/54"><MapPin className="size-4 text-amber-300" />{nextBooking.location}</p>
+                <div className="mt-7 grid max-w-2xl gap-3 sm:grid-cols-3">
+                  <TripDetail icon={CalendarDays} label="Check-in" value={formatShortDate(nextBooking.checkIn)} />
+                  <TripDetail icon={Clock3} label="Durasi" value={`${nextBooking.nights} malam`} />
+                  <TripDetail icon={Users} label="Tamu" value={`${nextBooking.guests} orang`} />
+                </div>
+                <div className="mt-8 flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={onOpenBookings} className="group inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-emerald-950 transition-transform hover:-translate-y-0.5">Lihat detail booking <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" /></button>
+                  <a href={`/api/bookings/${encodeURIComponent(nextBooking.id)}/invoice`} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/14 px-5 text-sm font-semibold text-white transition-colors hover:bg-white/8"><Download className="size-4" /> Invoice</a>
+                </div>
               </div>
-              <h2 className="mt-6 max-w-xl font-serif text-4xl font-semibold tracking-[-0.035em] sm:text-5xl">
-                Villa Aruna Cliffside
-              </h2>
-              <p className="mt-3 flex items-center gap-2 text-sm text-white/54">
-                <MapPin className="size-4 text-amber-300" />
-                Uluwatu, Bali
-              </p>
-              <div className="mt-7 grid max-w-2xl gap-3 sm:grid-cols-3">
-                <TripDetail icon={CalendarDays} label="Check-in" value="23 Agu 2026" />
-                <TripDetail icon={Clock3} label="Durasi" value="4 malam" />
-                <TripDetail icon={Users} label="Tamu" value="6 orang" />
-              </div>
-              <div className="mt-8 flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  onClick={onOpenBookings}
-                  className="group inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-semibold text-emerald-950 transition-transform hover:-translate-y-0.5"
-                >
-                  Lihat detail booking
-                  <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
-                </button>
-                <a
-                  href="/api/bookings/VLK-260823-1482/invoice"
-                  className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/14 px-5 text-sm font-semibold text-white transition-colors hover:bg-white/8"
-                >
-                  <Download className="size-4" />
-                  Invoice
-                </a>
-              </div>
+              <Link href={`/villas/${nextBooking.villaId}`} className="image-hover relative min-h-64 overflow-hidden lg:min-h-full">
+                <img src={nextBooking.image} alt={nextBooking.villaName} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+                <div className="absolute inset-0 bg-gradient-to-t from-emerald-950/66 via-transparent to-transparent lg:bg-gradient-to-r" />
+                <span className="absolute bottom-5 right-5 inline-flex items-center gap-2 rounded-full bg-white/84 px-4 py-2 text-xs font-semibold text-emerald-950 backdrop-blur-xl">Lihat villa <ArrowRight className="size-3.5" /></span>
+              </Link>
             </div>
-            <Link href="/villas/aruna-cliffside" className="image-hover relative min-h-64 overflow-hidden lg:min-h-full">
-              <img
-                src="https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1200&q=86"
-                alt="Kolam renang dan fasad Villa Aruna Cliffside"
-                className="absolute inset-0 h-full w-full object-cover"
-                loading="lazy"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-emerald-950/66 via-transparent to-transparent lg:bg-gradient-to-r" />
-              <span className="absolute bottom-5 right-5 inline-flex items-center gap-2 rounded-full bg-white/84 px-4 py-2 text-xs font-semibold text-emerald-950 backdrop-blur-xl">
-                Lihat villa <ArrowRight className="size-3.5" />
-              </span>
-            </Link>
-          </div>
-        </motion.article>
+          </motion.article>
+        ) : (
+          <motion.div variants={reveal} className="mt-7 rounded-[2rem] border border-dashed border-emerald-950/15 bg-white/40 p-10 text-center dark:border-white/15 dark:bg-white/4">
+            <p className="font-serif text-3xl font-semibold">Belum ada perjalanan</p>
+            <p className="mt-2 text-sm opacity-48">Booking pertama Anda akan muncul otomatis di sini.</p>
+          </motion.div>
+        )}
 
         <motion.div variants={reveal} className="mt-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
           {stats.map((stat) => {
@@ -644,7 +637,7 @@ function OverviewSection({
               </button>
             </div>
             <div className="mt-5 space-y-3">
-              {bookings.slice(1, 3).map((booking) => (
+              {bookings.slice(0, 2).map((booking) => (
                 <button
                   type="button"
                   key={booking.id}
@@ -702,11 +695,19 @@ function BookingsSection({
   filter,
   onFilterChange,
   shouldReduceMotion,
+  loading,
+  error,
+  onRefresh,
+  onCheckoutUpdated,
 }: {
   bookings: Booking[];
   filter: "all" | BookingStatus;
   onFilterChange: (filter: "all" | BookingStatus) => void;
   shouldReduceMotion: boolean;
+  loading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+  onCheckoutUpdated: (booking: Booking) => void;
 }) {
   return (
     <div>
@@ -741,8 +742,24 @@ function BookingsSection({
         variants={{ visible: { transition: { staggerChildren: 0.07 } } }}
       >
         <AnimatePresence mode="popLayout">
+          {loading && filteredBookings.length === 0 ? (
+            <div className="grid min-h-48 place-items-center rounded-[1.8rem] border border-emerald-950/10 bg-white/45 text-sm opacity-48 dark:border-white/10 dark:bg-white/4">
+              <span className="inline-flex items-center gap-2"><LoaderCircle className="size-4 animate-spin" /> Memuat booking akun Anda...</span>
+            </div>
+          ) : null}
+          {!loading && error ? (
+            <div className="rounded-[1.8rem] border border-rose-400/20 bg-rose-400/8 p-6 text-sm text-rose-700 dark:text-rose-200">
+              <p>{error}</p>
+              <button type="button" onClick={onRefresh} className="mt-3 rounded-full border border-current px-4 py-2 text-xs font-semibold">Coba lagi</button>
+            </div>
+          ) : null}
+          {!loading && !error && filteredBookings.length === 0 ? (
+            <div className="grid min-h-48 place-items-center rounded-[1.8rem] border border-dashed border-emerald-950/14 bg-white/35 p-6 text-center dark:border-white/14 dark:bg-white/4">
+              <div><Briefcase className="mx-auto size-8 opacity-25" /><p className="mt-3 font-semibold">Belum ada booking pada filter ini</p></div>
+            </div>
+          ) : null}
           {filteredBookings.map((booking) => (
-            <BookingCard key={booking.id} booking={booking} />
+            <BookingCard key={booking.id} booking={booking} onCheckoutUpdated={onCheckoutUpdated} />
           ))}
         </AnimatePresence>
       </motion.div>
@@ -750,8 +767,33 @@ function BookingsSection({
   );
 }
 
-function BookingCard({ booking }: { booking: Booking }) {
+function BookingCard({ booking, onCheckoutUpdated }: { booking: Booking; onCheckoutUpdated: (booking: Booking) => void }) {
   const status = bookingStatusMeta[booking.status];
+  const { notify } = useAppNotifications();
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutNotes, setCheckoutNotes] = useState("");
+  const [requesting, setRequesting] = useState(false);
+
+  const requestCheckout = async () => {
+    setRequesting(true);
+    try {
+      const response = await fetch(`/api/bookings/${encodeURIComponent(booking.id)}/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ notes: checkoutNotes }),
+      });
+      const payload = (await response.json()) as { data?: BookingApiItem; message?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.message || "Permintaan checkout gagal dikirim.");
+      const updated = toDashboardBooking(payload.data);
+      onCheckoutUpdated(updated);
+      setCheckoutOpen(false);
+      notify({ title: "Permintaan checkout terkirim", description: "Status kini menunggu persetujuan Receptionist.", variant: "success" });
+    } catch (requestError) {
+      notify({ title: "Checkout belum dapat diajukan", description: requestError instanceof Error ? requestError.message : "Silakan coba kembali.", variant: "error" });
+    } finally {
+      setRequesting(false);
+    }
+  };
 
   return (
     <motion.article
@@ -772,7 +814,7 @@ function BookingCard({ booking }: { booking: Booking }) {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[0.66rem] font-bold uppercase tracking-[0.18em] text-emerald-950/40 dark:text-white/38">
-                {booking.id}
+                {booking.code}
               </p>
               <h2 className="mt-2 font-serif text-2xl font-semibold sm:text-3xl">{booking.villaName}</h2>
               <p className="mt-2 flex items-center gap-2 text-sm text-emerald-950/48 dark:text-white/46">
@@ -817,7 +859,56 @@ function BookingCard({ booking }: { booking: Booking }) {
                 <Star className="size-3.5" /> Tulis ulasan
               </Link>
             ) : null}
+            {booking.checkout.canRequest ? (
+              <button
+                type="button"
+                onClick={() => setCheckoutOpen((open) => !open)}
+                className="inline-flex min-h-10 items-center gap-2 rounded-full bg-amber-400 px-4 text-xs font-bold text-emerald-950 transition-transform hover:-translate-y-0.5"
+              >
+                <DoorOpen className="size-3.5" /> Checkout
+              </button>
+            ) : null}
+            {booking.checkout.status === "CHECKOUT_REQUESTED" ? (
+              <span className="inline-flex min-h-10 items-center gap-2 rounded-full border border-amber-400/25 bg-amber-300/10 px-4 text-xs font-semibold text-amber-800 dark:text-amber-200">
+                <Clock3 className="size-3.5 animate-pulse" /> Menunggu persetujuan Receptionist
+              </span>
+            ) : null}
+            {booking.checkout.status === "CHECKED_OUT" ? (
+              <span className="inline-flex min-h-10 items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/9 px-4 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                <Check className="size-3.5" /> Checked Out {booking.checkout.checkedOutAt ? `· ${formatDateTime(booking.checkout.checkedOutAt)}` : ""}
+              </span>
+            ) : null}
           </div>
+          <AnimatePresence>
+            {checkoutOpen ? (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-300/8 p-4">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">Ajukan checkout melalui website</p>
+                  <p className="mt-1 text-xs leading-5 opacity-55">User hanya mengirim permintaan. Status reservasi baru menjadi Checked Out setelah dikonfirmasi Receptionist.</p>
+                  <textarea value={checkoutNotes} onChange={(event) => setCheckoutNotes(event.target.value)} rows={2} maxLength={2000} placeholder="Catatan untuk Receptionist (opsional)" className="mt-3 w-full resize-none rounded-xl border border-emerald-950/10 bg-white/60 p-3 text-sm outline-none focus:border-emerald-600/40 dark:border-white/10 dark:bg-white/5" />
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button type="button" onClick={() => setCheckoutOpen(false)} className="rounded-full px-4 py-2 text-xs font-semibold">Batal</button>
+                    <button type="button" disabled={requesting} onClick={() => void requestCheckout()} className="inline-flex items-center gap-2 rounded-full bg-emerald-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                      {requesting ? <LoaderCircle className="size-3.5 animate-spin" /> : <DoorOpen className="size-3.5" />} Kirim permintaan
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+          {booking.checkout.history.length > 0 ? (
+            <div className="mt-4 border-t border-emerald-950/8 pt-4 dark:border-white/8">
+              <p className="text-[0.65rem] font-bold uppercase tracking-[0.16em] opacity-38">Riwayat checkout</p>
+              <div className="mt-2 space-y-2">
+                {booking.checkout.history.map((event) => (
+                  <div key={event.id} className="flex items-start gap-2 text-xs">
+                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-emerald-500" />
+                    <p><span className="font-semibold">{event.toStatus === "CHECKED_OUT" ? "Checkout dikonfirmasi" : "Permintaan checkout dikirim"}</span><span className="opacity-45"> · {formatDateTime(event.createdAt)} · {event.actor?.name || event.actor?.email || "Sistem"}</span></p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </motion.article>
@@ -1098,9 +1189,49 @@ function AccountPreference({ icon: Icon, title, description }: { icon: typeof Cr
 
 const bookingStatusMeta: Record<BookingStatus, { label: string; className: string }> = {
   upcoming: { label: "Akan datang", className: "bg-emerald-300/90 text-emerald-950" },
+  active: { label: "Active · Sedang menginap", className: "bg-sky-100/95 text-sky-800" },
+  checkout_requested: { label: "Checkout Requested", className: "bg-amber-200/95 text-amber-900" },
   completed: { label: "Selesai", className: "bg-white/86 text-emerald-950" },
   cancelled: { label: "Dibatalkan", className: "bg-red-100/90 text-red-700" },
 };
+
+function toDashboardBooking(record: BookingApiItem): Booking {
+  const status: BookingStatus =
+    record.checkout.status === "CHECKED_OUT" || record.bookingStatus === "COMPLETED"
+      ? "completed"
+      : record.checkout.status === "CHECKOUT_REQUESTED"
+        ? "checkout_requested"
+        : record.checkout.status === "ACTIVE"
+          ? "active"
+          : ["CANCELLED", "EXPIRED", "REFUNDED"].includes(record.bookingStatus)
+            ? "cancelled"
+            : "upcoming";
+  const paymentLabel =
+    record.paymentStatus === "PAID"
+      ? "Lunas"
+      : record.paymentStatus === "PARTIALLY_PAID"
+        ? "Dibayar sebagian"
+        : record.paymentStatus === "REFUNDED"
+          ? "Refund"
+          : "Belum lunas";
+
+  return {
+    id: record.bookingId,
+    code: record.bookingCode,
+    villaId: record.villa.id,
+    villaName: record.villa.name,
+    location: record.villa.location,
+    image: record.villa.image || fallbackVillaImage,
+    checkIn: record.stay.checkIn,
+    checkOut: record.stay.checkOut,
+    nights: record.stay.nights,
+    guests: record.stay.guests,
+    total: record.totalAmount,
+    status,
+    paymentLabel,
+    checkout: record.checkout,
+  };
+}
 
 function formatRupiah(value: number) {
   return new Intl.NumberFormat("id-ID", {
@@ -1116,4 +1247,11 @@ function formatShortDate(value: string) {
     month: "short",
     year: "numeric",
   }).format(new Date(`${value}T12:00:00`));
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

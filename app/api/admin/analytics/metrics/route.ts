@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { listBookingRecords } from "@/lib/booking-store";
-import { listAdminVillaRecords } from "@/lib/admin-villa-store";
 import { prisma } from "@/lib/prisma";
 import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
 import { hasPermission } from "@/lib/rbac";
@@ -33,6 +31,7 @@ type AnalyticsBooking = {
   paymentStatus: string;
   nights: number;
   totalAmount: number;
+  paidAmount: number;
   createdAt: Date;
 };
 
@@ -70,6 +69,10 @@ export async function GET(request: Request) {
           paymentStatus: true,
           nights: true,
           totalAmount: true,
+          payments: {
+            where: { status: "PAID" },
+            select: { amount: true, feeAmount: true },
+          },
           createdAt: true,
         },
         orderBy: { createdAt: "desc" },
@@ -87,6 +90,10 @@ export async function GET(request: Request) {
           paymentStatus: true,
           nights: true,
           totalAmount: true,
+          payments: {
+            where: { status: "PAID" },
+            select: { amount: true, feeAmount: true },
+          },
           createdAt: true,
         },
       }),
@@ -103,37 +110,19 @@ export async function GET(request: Request) {
       meta: { source: "database", period: parsed.data.period, groupBy },
     });
   } catch (error) {
-    if (!isPrismaDatabaseUnavailableError(error)) {
-      console.error("Admin analytics API error", error);
-      return NextResponse.json(
-        { message: "Metrik dashboard belum dapat dimuat." },
-        { status: 500 },
-      );
-    }
+    console.error("Admin analytics API error", error);
+    return NextResponse.json(
+      {
+        error: isPrismaDatabaseUnavailableError(error)
+          ? "DATABASE_UNAVAILABLE"
+          : "ANALYTICS_FAILED",
+        message: isPrismaDatabaseUnavailableError(error)
+          ? "Database PostgreSQL belum tersedia."
+          : "Metrik dashboard belum dapat dimuat.",
+      },
+      { status: isPrismaDatabaseUnavailableError(error) ? 503 : 500 },
+    );
   }
-
-  const all = listBookingRecords().map((booking) => ({
-    id: booking.id,
-    bookingCode: booking.bookingCode,
-    villaId: booking.villaId,
-    villaName: booking.villaName,
-    guestName: booking.guest.name,
-    guestEmail: booking.guest.email,
-    status: booking.status,
-    paymentStatus: booking.paymentStatus,
-    nights: booking.nights,
-    totalAmount: booking.amounts.totalAmount,
-    createdAt: new Date(booking.createdAt),
-  }));
-  const current = inRange(all, range.from, range.to);
-  const previous = inRange(all, range.previousFrom, range.from, false);
-  const villaCount = listAdminVillaRecords().filter(
-    (villa) => villa.status === "PUBLISHED",
-  ).length;
-  return NextResponse.json({
-    data: buildAnalytics(current, previous, villaCount, range, groupBy),
-    meta: { source: "memory-fallback", period: parsed.data.period, groupBy },
-  });
 }
 
 function normalizeDatabaseBooking(booking: {
@@ -147,9 +136,18 @@ function normalizeDatabaseBooking(booking: {
   paymentStatus: string;
   nights: number;
   totalAmount: number;
+  payments: Array<{ amount: number; feeAmount: number }>;
   createdAt: Date;
 }): AnalyticsBooking {
-  return { ...booking, villaName: booking.villa.name };
+  return {
+    ...booking,
+    villaName: booking.villa.name,
+    paidAmount: booking.payments.reduce(
+      (total, payment) =>
+        total + Math.max(payment.amount - payment.feeAmount, 0),
+      0,
+    ),
+  };
 }
 
 function buildAnalytics(
@@ -183,7 +181,7 @@ function buildAnalytics(
     };
     villa.bookings += 1;
     if (isOccupied(booking)) villa.nights += booking.nights;
-    if (isRevenue(booking)) villa.revenue += booking.totalAmount;
+    villa.revenue += booking.paidAmount;
     villas.set(booking.villaId, villa);
   }
   return {
@@ -195,6 +193,7 @@ function buildAnalytics(
         bookings: trend(metrics.bookings, previousMetrics.bookings),
         occupancy: trend(metrics.occupancy, previousMetrics.occupancy),
         customers: trend(metrics.customers, previousMetrics.customers),
+        conversion: trend(metrics.conversion, previousMetrics.conversion),
       },
     },
     revenueSeries: createSeries(current, range.from, range.to, groupBy),
@@ -222,14 +221,21 @@ function summarize(
     .filter(isOccupied)
     .reduce((total, booking) => total + booking.nights, 0);
   return {
-    revenue: bookings
-      .filter(isRevenue)
-      .reduce((total, booking) => total + booking.totalAmount, 0),
+    revenue: bookings.reduce(
+      (total, booking) => total + booking.paidAmount,
+      0,
+    ),
     bookings: bookings.length,
     occupancy: percentage(occupiedNights, Math.max(1, villaCount * days)),
     customers: new Set(
       bookings.map((booking) => booking.guestEmail.toLowerCase()),
     ).size,
+    conversion: percentage(
+      bookings.filter((booking) =>
+        ["CONFIRMED", "COMPLETED"].includes(booking.status),
+      ).length,
+      Math.max(1, bookings.length),
+    ),
   };
 }
 
@@ -247,7 +253,7 @@ function createSeries(
     const key = bucketKey(booking.createdAt, groupBy);
     const bucket = buckets.get(key) ?? { label: key, revenue: 0, bookings: 0 };
     bucket.bookings += 1;
-    if (isRevenue(booking)) bucket.revenue += booking.totalAmount;
+    bucket.revenue += booking.paidAmount;
     buckets.set(key, bucket);
   }
   return Array.from(buckets.values()).sort((left, right) =>
@@ -294,26 +300,6 @@ function defaultGrouping(
   if (period === "12m") return "month";
   if (period === "90d") return "week";
   return "day";
-}
-
-function inRange(
-  items: AnalyticsBooking[],
-  from: Date,
-  to: Date,
-  inclusive = true,
-) {
-  return items.filter(
-    (item) =>
-      item.createdAt >= from &&
-      (inclusive ? item.createdAt <= to : item.createdAt < to),
-  );
-}
-
-function isRevenue(booking: AnalyticsBooking) {
-  return (
-    booking.paymentStatus === "PAID" &&
-    !["CANCELLED", "REFUNDED"].includes(booking.status)
-  );
 }
 
 function isOccupied(booking: AnalyticsBooking) {

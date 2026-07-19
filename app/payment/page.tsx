@@ -34,6 +34,7 @@ export default function PaymentMethodPage() {
   const [selectedMethodId, setSelectedMethodId] = useState(paymentMethods[0]?.id ?? "");
   const [gatewayMethodId, setGatewayMethodId] = useState("");
   const [toast, setToast] = useState("");
+  const [savingMethod, setSavingMethod] = useState(false);
   const shouldReduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -71,28 +72,49 @@ export default function PaymentMethodPage() {
     window.setTimeout(() => setToast(""), duration);
   };
 
-  const savePaymentMethod = () => {
-    if (!draft || !selectedMethod) return;
+  const savePaymentMethod = async () => {
+    if (!draft || !selectedMethod || savingMethod) return;
 
-    window.sessionStorage.setItem(
-      paymentDraftStorageKey,
-      JSON.stringify({
-        bookingId: draft.id,
-        method: selectedMethod,
-        amount: paymentSummary.total,
-        deposit: paymentSummary.deposit,
-        fee: paymentSummary.fee,
-        status: "method-selected",
-        createdAt: new Date().toISOString(),
-      }),
-    );
-    if (selectedMethod.id === "bank-transfer") {
-      showToast("Metode transfer manual dipilih. Membuka halaman konfirmasi...", 2600);
-      window.setTimeout(() => router.push("/payment/manual"), 520);
-      return;
+    setSavingMethod(true);
+    try {
+      const response = await fetch(
+        `/api/bookings/${encodeURIComponent(draft.id)}/payment-method`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ methodId: selectedMethod.id }),
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+      if (!response.ok) {
+        showToast(payload?.message || "Metode pembayaran gagal disimpan.", 3400);
+        return;
+      }
+
+      window.sessionStorage.setItem(
+        paymentDraftStorageKey,
+        JSON.stringify({
+          bookingId: draft.id,
+          method: selectedMethod,
+          amount: paymentSummary.total,
+          deposit: paymentSummary.deposit,
+          fee: paymentSummary.fee,
+          status: "method-selected",
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      if (selectedMethod.id === "bank-transfer") {
+        showToast("Metode transfer manual dipilih. Membuka halaman konfirmasi...", 2600);
+        window.setTimeout(() => router.push("/payment/manual"), 520);
+        return;
+      }
+
+      setGatewayMethodId(selectedMethod.id);
+    } finally {
+      setSavingMethod(false);
     }
-
-    setGatewayMethodId(selectedMethod.id);
   };
 
   if (!loaded) {
@@ -218,8 +240,13 @@ export default function PaymentMethodPage() {
                   <PaymentContinueButton
                     method={selectedMethod}
                     amount={paymentSummary.total}
-                    onContinue={savePaymentMethod}
+                    onContinue={() => void savePaymentMethod()}
                   />
+                  {savingMethod ? (
+                    <p className="mt-2 text-center text-xs text-emerald-700 dark:text-emerald-300">
+                      Menyimpan metode pembayaran...
+                    </p>
+                  ) : null}
                 </div>
                 <Button asChild className="mt-3 w-full" variant="outline">
                   <Link href="/booking/summary">Kembali ke ringkasan</Link>

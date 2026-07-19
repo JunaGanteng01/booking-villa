@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { getStayDates } from "@/lib/booking-availability";
+import { persistBookingRecord } from "@/lib/booking-database";
 import { triggerBookingInvoiceEmail } from "@/lib/booking-email-triggers";
 import { calculateBookingPricing, type PricingInput } from "@/lib/booking-pricing";
-import { createBookingRecord } from "@/lib/booking-store";
+import { createBookingRecord, removeBookingRecord } from "@/lib/booking-store";
 import { triggerBookingCreated } from "@/lib/notification-triggers";
+import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
 import { getVillaById } from "@/lib/villa-data";
+import { listUserCheckoutBookings } from "@/lib/checkout-service";
 
 type CreateBookingInput = PricingInput & {
   villaId?: string | null;
@@ -156,6 +158,24 @@ export async function POST(request: Request) {
     expiresAt,
   });
 
+  try {
+    await persistBookingRecord(booking, villa);
+  } catch (error) {
+    removeBookingRecord(booking.id);
+    console.error("Booking database persistence error", error);
+    return NextResponse.json(
+      {
+        error: isPrismaDatabaseUnavailableError(error)
+          ? "DATABASE_UNAVAILABLE"
+          : "BOOKING_PERSISTENCE_FAILED",
+        message: isPrismaDatabaseUnavailableError(error)
+          ? "Database PostgreSQL belum tersedia. Booking tidak dibuat agar data tidak terpecah."
+          : "Booking belum dapat disimpan. Silakan coba kembali.",
+      },
+      { status: isPrismaDatabaseUnavailableError(error) ? 503 : 500 },
+    );
+  }
+
   void triggerBookingCreated(booking);
   void triggerBookingInvoiceEmail(booking);
 
@@ -171,8 +191,8 @@ export async function POST(request: Request) {
         },
       },
       meta: {
-        source: "mock-store",
-        note: "Booking disimpan di in-memory store dan siap dipetakan ke Prisma Booking.",
+        source: "database",
+        note: "Booking dan tagihan awal tersimpan di PostgreSQL.",
       },
     },
     { status: 201 },
@@ -215,27 +235,12 @@ export async function GET(req: Request) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const bookings = await prisma.booking.findMany({
-      where: { userId },
-      include: {
-        villa: {
-          select: {
-            id: true,
-            name: true,
-            location: true,
-            images: {
-              where: { isCover: true },
-              take: 1,
-            },
-          },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    const bookings = await listUserCheckoutBookings(userId);
 
-    return NextResponse.json({ bookings }, { status: 200 });
+    return NextResponse.json(
+      { bookings, meta: { source: "database", generatedAt: new Date().toISOString() } },
+      { status: 200 },
+    );
   } catch (error) {
     console.error("Get bookings error:", error);
     return NextResponse.json({ message: "Terjadi kesalahan pada server" }, { status: 500 });

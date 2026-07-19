@@ -74,6 +74,11 @@ type TransactionDto = {
   currency: string;
   status: TransactionStatus;
   displayStatus: "SUCCESS" | "PENDING" | "FAILED" | "REFUNDED";
+  senderName: string;
+  senderBank: string;
+  transferDate: string | null;
+  proofId: string | null;
+  proofStatus: "PENDING" | "VERIFIED" | "REJECTED" | null;
   paidAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -113,6 +118,15 @@ export async function GET(request: Request) {
               },
             },
             paymentMethod: { select: { code: true, name: true } },
+            proofs: {
+              orderBy: { uploadedAt: "desc" },
+              take: 1,
+              select: {
+                id: true,
+                status: true,
+                uploadedAt: true,
+              },
+            },
           },
           orderBy: createOrderBy(filters.sort),
           skip: (filters.page - 1) * filters.limit,
@@ -249,6 +263,7 @@ function serializeDatabaseTransaction(payment: {
   amount: number;
   feeAmount: number;
   currency: string;
+  providerPayload: Prisma.JsonValue | null;
   paidAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -259,7 +274,14 @@ function serializeDatabaseTransaction(payment: {
     villa: { name: string };
   };
   paymentMethod: { code: string; name: string } | null;
+  proofs: Array<{
+    id: string;
+    status: "PENDING" | "VERIFIED" | "REJECTED";
+    uploadedAt: Date;
+  }>;
 }): TransactionDto {
+  const sender = readSenderPayload(payment.providerPayload);
+  const proof = payment.proofs[0] ?? null;
   return {
     id: payment.id,
     bookingId: payment.bookingId,
@@ -276,6 +298,11 @@ function serializeDatabaseTransaction(payment: {
     currency: payment.currency,
     status: payment.status,
     displayStatus: toDisplayStatus(payment.status),
+    senderName: sender.name || payment.booking.guestName,
+    senderBank: sender.bank || payment.paymentMethod?.name || payment.provider,
+    transferDate: sender.transferDate,
+    proofId: proof?.id ?? null,
+    proofStatus: proof?.status ?? null,
     paidAt: payment.paidAt?.toISOString() ?? null,
     createdAt: payment.createdAt.toISOString(),
     updatedAt: payment.updatedAt.toISOString(),
@@ -331,6 +358,12 @@ function createMemoryTransactions(): TransactionDto[] {
         currency: "IDR",
         status,
         displayStatus: toDisplayStatus(status),
+        senderName: proof?.senderName ?? booking.guest.name,
+        senderBank: proof?.senderBank ?? payment.method.title,
+        transferDate: proof?.transferDate ?? null,
+        proofId: proof?.id ?? null,
+        proofStatus:
+          proof?.status === "WAITING_REVIEW" ? "PENDING" : proof?.status ?? null,
         paidAt:
           status === "PAID"
             ? (proof?.reviewedAt ?? stripe?.updatedAt ?? null)
@@ -340,6 +373,18 @@ function createMemoryTransactions(): TransactionDto[] {
       },
     ];
   });
+}
+
+function readSenderPayload(value: Prisma.JsonValue | null) {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return { name: "", bank: "", transferDate: null };
+  }
+  return {
+    name: typeof value.senderName === "string" ? value.senderName : "",
+    bank: typeof value.senderBank === "string" ? value.senderBank : "",
+    transferDate:
+      typeof value.transferDate === "string" ? value.transferDate : null,
+  };
 }
 
 function memoryStatus({

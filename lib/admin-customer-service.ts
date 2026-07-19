@@ -1,7 +1,5 @@
 import type { BookingStatus } from "@prisma/client";
-import { listBookingRecords } from "@/lib/booking-store";
 import { prisma } from "@/lib/prisma";
-import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
 
 export type AdminCustomer = {
   id: string;
@@ -22,136 +20,122 @@ export type AdminCustomer = {
 
 export type AdminCustomerResult = {
   customers: AdminCustomer[];
-  source: "database" | "memory-fallback";
+  source: "database";
 };
 
 type CustomerAccumulator = Omit<AdminCustomer, "tier">;
 
-const VALUE_STATUSES: BookingStatus[] = ["CONFIRMED", "COMPLETED", "REFUNDED"];
+const STAY_STATUSES: BookingStatus[] = ["CONFIRMED", "COMPLETED"];
 
 export async function listAdminCustomers(): Promise<AdminCustomerResult> {
-  try {
-    const [users, bookings] = await prisma.$transaction([
-      prisma.user.findMany({
-        where: { role: "CUSTOMER" },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          emailVerified: true,
-          createdAt: true,
-          _count: { select: { reviews: true } },
+  const [users, bookings] = await prisma.$transaction([
+    prisma.user.findMany({
+      where: { role: "CUSTOMER" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        emailVerified: true,
+        createdAt: true,
+        _count: { select: { reviews: true } },
+      },
+    }),
+    prisma.booking.findMany({
+      select: {
+        userId: true,
+        guestName: true,
+        guestEmail: true,
+        guestPhone: true,
+        nights: true,
+        status: true,
+        checkOut: true,
+        createdAt: true,
+        payments: {
+          where: { status: "PAID" },
+          select: {
+            amount: true,
+            feeAmount: true,
+            refunds: {
+              where: { status: "SUCCEEDED" },
+              select: { amount: true },
+            },
+          },
         },
-      }),
-      prisma.booking.findMany({
-        select: {
-          userId: true,
-          guestName: true,
-          guestEmail: true,
-          guestPhone: true,
-          nights: true,
-          totalAmount: true,
-          status: true,
-          checkOut: true,
-          createdAt: true,
-        },
-        orderBy: { createdAt: "desc" },
-      }),
-    ]);
-
-    const customers = new Map<string, CustomerAccumulator>();
-    for (const user of users) {
-      customers.set(user.id, {
-        id: user.id,
-        userId: user.id,
-        name: user.name || user.email.split("@")[0],
-        email: user.email,
-        phone: "-",
-        country: "Indonesia",
-        bookings: 0,
-        nights: 0,
-        spent: 0,
-        lastStay: null,
-        joinedAt: user.createdAt.toISOString(),
-        verified: Boolean(user.emailVerified),
-        reviews: user._count.reviews,
-      });
-    }
-
-    for (const booking of bookings) {
-      const key = booking.userId ?? `guest:${booking.guestEmail.toLowerCase()}`;
-      const current = customers.get(key) ?? {
-        id: key,
-        userId: booking.userId,
-        name: booking.guestName,
-        email: booking.guestEmail,
-        phone: booking.guestPhone,
-        country: "Indonesia",
-        bookings: 0,
-        nights: 0,
-        spent: 0,
-        lastStay: null,
-        joinedAt: booking.createdAt.toISOString(),
-        verified: false,
-        reviews: 0,
-      };
-      current.name = current.name || booking.guestName;
-      current.phone =
-        current.phone === "-" ? booking.guestPhone : current.phone;
-      current.bookings += 1;
-      if (VALUE_STATUSES.includes(booking.status)) {
-        current.nights += booking.nights;
-        current.spent += booking.totalAmount;
-      }
-      current.lastStay = newestDate(
-        current.lastStay,
-        booking.checkOut.toISOString(),
-      );
-      current.joinedAt = oldestDate(
-        current.joinedAt,
-        booking.createdAt.toISOString(),
-      );
-      customers.set(key, current);
-    }
-
-    return {
-      customers: finalizeCustomers(customers.values()),
-      source: "database",
-    };
-  } catch (error) {
-    if (!isPrismaDatabaseUnavailableError(error)) throw error;
-  }
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
 
   const customers = new Map<string, CustomerAccumulator>();
-  for (const booking of listBookingRecords()) {
-    const key = `guest:${booking.guest.email.toLowerCase()}`;
-    const current = customers.get(key) ?? {
-      id: key,
-      userId: null,
-      name: booking.guest.name,
-      email: booking.guest.email,
-      phone: booking.guest.phone,
+  const userKeyByEmail = new Map<string, string>();
+  for (const user of users) {
+    userKeyByEmail.set(user.email.toLowerCase(), user.id);
+    customers.set(user.id, {
+      id: user.id,
+      userId: user.id,
+      name: user.name || user.email.split("@")[0],
+      email: user.email,
+      phone: "-",
       country: "Indonesia",
       bookings: 0,
       nights: 0,
       spent: 0,
       lastStay: null,
-      joinedAt: booking.createdAt,
+      joinedAt: user.createdAt.toISOString(),
+      verified: Boolean(user.emailVerified),
+      reviews: user._count.reviews,
+    });
+  }
+
+  for (const booking of bookings) {
+    const emailKey = booking.guestEmail.toLowerCase();
+    const key =
+      booking.userId ?? userKeyByEmail.get(emailKey) ?? `guest:${emailKey}`;
+    const current = customers.get(key) ?? {
+      id: key,
+      userId: booking.userId,
+      name: booking.guestName,
+      email: booking.guestEmail,
+      phone: booking.guestPhone,
+      country: "Indonesia",
+      bookings: 0,
+      nights: 0,
+      spent: 0,
+      lastStay: null,
+      joinedAt: booking.createdAt.toISOString(),
       verified: false,
       reviews: 0,
     };
+    current.name = current.name || booking.guestName;
+    current.phone = current.phone === "-" ? booking.guestPhone : current.phone;
     current.bookings += 1;
-    if (VALUE_STATUSES.includes(booking.status)) {
+    current.spent += booking.payments.reduce((paymentTotal, payment) => {
+      const refunded = payment.refunds.reduce(
+        (refundTotal, refund) => refundTotal + refund.amount,
+        0,
+      );
+      return (
+        paymentTotal +
+        Math.max(payment.amount - payment.feeAmount - refunded, 0)
+      );
+    }, 0);
+    if (STAY_STATUSES.includes(booking.status)) {
       current.nights += booking.nights;
-      current.spent += booking.amounts.totalAmount;
+      current.lastStay = newestDate(
+        current.lastStay,
+        booking.checkOut.toISOString(),
+      );
     }
-    current.lastStay = newestDate(current.lastStay, booking.checkOut);
-    current.joinedAt = oldestDate(current.joinedAt, booking.createdAt);
+    current.joinedAt = oldestDate(
+      current.joinedAt,
+      booking.createdAt.toISOString(),
+    );
     customers.set(key, current);
   }
+
   return {
     customers: finalizeCustomers(customers.values()),
-    source: "memory-fallback",
+    source: "database",
   };
 }
 

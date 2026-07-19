@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { listBookingRecords } from "@/lib/booking-store";
+import { listDatabaseBookingRecords } from "@/lib/booking-database";
+import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
 
 export async function GET(request: Request) {
   const role = request.headers.get("x-user-role") ?? "";
@@ -10,13 +11,26 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({
-    data: {
-      bookings: listBookingRecords(),
-    },
-    meta: {
-      source: "live-booking-store",
-      generatedAt: new Date().toISOString(),
-    },
-  });
+  try {
+    return NextResponse.json({
+      data: { bookings: await listDatabaseBookingRecords() },
+      meta: {
+        source: "database",
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Admin booking database read error", error);
+    return NextResponse.json(
+      {
+        error: isPrismaDatabaseUnavailableError(error)
+          ? "DATABASE_UNAVAILABLE"
+          : "BOOKING_LIST_FAILED",
+        message: isPrismaDatabaseUnavailableError(error)
+          ? "Database PostgreSQL belum tersedia."
+          : "Daftar booking belum dapat dimuat.",
+      },
+      { status: isPrismaDatabaseUnavailableError(error) ? 503 : 500 },
+    );
+  }
 }

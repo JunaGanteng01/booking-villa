@@ -6,7 +6,9 @@ import {
   updateBookingPaymentState,
   updateBookingStatus,
 } from "@/lib/booking-store";
-import { reviewManualPaymentProof } from "@/lib/payment-store";
+import { getDatabaseBookingRecord } from "@/lib/booking-database";
+import { triggerBookingConfirmationEmail } from "@/lib/booking-email-triggers";
+import { triggerPaymentStatusChanged } from "@/lib/notification-triggers";
 import { prisma } from "@/lib/prisma";
 import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
 
@@ -97,11 +99,23 @@ export async function PATCH(
         },
       });
 
-      const bookingPaymentStatus = verified
-        ? payment.amount >= proof.payment.booking.totalAmount
+      const paidPayments = await tx.payment.findMany({
+        where: {
+          bookingId: proof.payment.booking.id,
+          status: "PAID",
+        },
+        select: { amount: true, feeAmount: true },
+      });
+      const paidPrincipal = paidPayments.reduce(
+        (total, item) => total + Math.max(item.amount - item.feeAmount, 0),
+        0,
+      );
+      const bookingPaymentStatus =
+        paidPrincipal >= proof.payment.booking.totalAmount
           ? "PAID"
-          : "PARTIALLY_PAID"
-        : "FAILED";
+          : paidPrincipal > 0
+            ? "PARTIALLY_PAID"
+            : "FAILED";
       const shouldConfirm =
         verified &&
         ["PENDING", "WAITING_PAYMENT"].includes(proof.payment.booking.status);
@@ -109,9 +123,38 @@ export async function PATCH(
         where: { id: proof.payment.booking.id },
         data: {
           paymentStatus: bookingPaymentStatus,
+          remainingAmount: Math.max(
+            proof.payment.booking.totalAmount - paidPrincipal,
+            0,
+          ),
           ...(shouldConfirm
             ? { status: "CONFIRMED", confirmedAt: now, expiresAt: null }
             : {}),
+        },
+      });
+
+      await tx.paymentEvent.create({
+        data: {
+          paymentId: payment.id,
+          providerEventId: `manual-review-${updatedProof.id}-${parsed.data.action.toLowerCase()}`,
+          eventType: verified
+            ? "manual.payment.verified"
+            : "manual.payment.rejected",
+          payload: {
+            action: parsed.data.action,
+            reviewerId: reviewer?.id ?? null,
+            paymentProofId: updatedProof.id,
+            bookingId: booking.id,
+            bookingCode: booking.bookingCode,
+            paidPrincipal,
+            currentPaymentPrincipal: Math.max(
+              payment.amount - payment.feeAmount,
+              0,
+            ),
+            paymentStatus: bookingPaymentStatus,
+            reason: parsed.data.reason ?? null,
+          },
+          processedAt: now,
         },
       });
 
@@ -145,6 +188,42 @@ export async function PATCH(
 
     if (!result) return paymentProofNotFound();
     if (result.conflict) return alreadyReviewed(result.conflict);
+    const databaseBooking = await getDatabaseBookingRecord(result.booking.id);
+    const memoryBooking = findBookingRecord(result.booking.id);
+    if (memoryBooking) {
+      updateBookingPaymentState(memoryBooking.id, {
+        paymentStatus: result.booking.paymentStatus,
+      });
+      if (memoryBooking.status !== result.booking.status) {
+        updateBookingStatus({
+          bookingId: memoryBooking.id,
+          status: result.booking.status,
+          actorId: reviewerId,
+          reason:
+            parsed.data.action === "VERIFY"
+              ? "Pembayaran manual diverifikasi."
+              : "Bukti pembayaran ditolak.",
+          metadata: { paymentProofId: result.proof.id },
+        });
+      }
+    }
+    if (databaseBooking) {
+      void triggerPaymentStatusChanged({
+        booking: databaseBooking,
+        status:
+          parsed.data.action === "VERIFY"
+            ? result.booking.paymentStatus === "PARTIALLY_PAID"
+              ? "PARTIALLY_PAID"
+              : "PAID"
+            : "FAILED",
+        provider: "MANUAL",
+        eventId: result.proof.id,
+      });
+      if (parsed.data.action === "VERIFY") {
+        void triggerBookingConfirmationEmail(databaseBooking);
+      }
+    }
+
     return NextResponse.json({
       data: result,
       message:
@@ -154,22 +233,18 @@ export async function PATCH(
       meta: { source: "database" },
     });
   } catch (error) {
-    if (!isPrismaDatabaseUnavailableError(error)) {
-      console.error("Admin manual payment confirmation error", error);
-      return NextResponse.json(
-        {
-          error: "PAYMENT_REVIEW_FAILED",
-          message: "Verifikasi pembayaran belum dapat diproses.",
-        },
-        { status: 500 },
-      );
-    }
-    return reviewMemoryPayment({
-      id,
-      action: parsed.data.action,
-      reason: parsed.data.reason,
-      reviewerId,
-    });
+    console.error("Admin manual payment confirmation error", error);
+    return NextResponse.json(
+      {
+        error: isPrismaDatabaseUnavailableError(error)
+          ? "DATABASE_UNAVAILABLE"
+          : "PAYMENT_REVIEW_FAILED",
+        message: isPrismaDatabaseUnavailableError(error)
+          ? "Database PostgreSQL belum tersedia. Verifikasi tidak diterapkan agar status tetap konsisten."
+          : "Verifikasi pembayaran belum dapat diproses.",
+      },
+      { status: isPrismaDatabaseUnavailableError(error) ? 503 : 500 },
+    );
   }
 }
 
@@ -202,53 +277,6 @@ async function findDatabaseProof(
         include: { payment: { include: { booking: true } } },
       })
     : null;
-}
-
-function reviewMemoryPayment({
-  id,
-  action,
-  reason,
-  reviewerId,
-}: {
-  id: string;
-  action: "VERIFY" | "REJECT";
-  reason?: string | null;
-  reviewerId: string | null;
-}) {
-  const review = reviewManualPaymentProof({
-    identifier: id,
-    action,
-    reviewerId,
-    rejectionReason: reason,
-  });
-  if (!review) return paymentProofNotFound();
-  if (!review.updated) return alreadyReviewed(review.proof.status);
-  const proof = review.proof;
-
-  const current = findBookingRecord(proof.bookingId);
-  if (!current) return paymentProofNotFound();
-  let booking = updateBookingPaymentState(current.id, {
-    paymentStatus: action === "VERIFY" ? "PAID" : "FAILED",
-  });
-  if (action === "VERIFY" && booking) {
-    booking =
-      updateBookingStatus({
-        bookingId: booking.id,
-        status: "CONFIRMED",
-        actorId: reviewerId,
-        reason: "Pembayaran manual diverifikasi.",
-        metadata: { paymentProofId: proof.id },
-      })?.booking ?? booking;
-  }
-
-  return NextResponse.json({
-    data: { booking, proof },
-    message:
-      action === "VERIFY"
-        ? "Pembayaran manual berhasil diverifikasi."
-        : "Bukti pembayaran ditolak.",
-    meta: { source: "memory-fallback" },
-  });
 }
 
 function canReviewPayment(request: Request) {

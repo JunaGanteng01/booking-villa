@@ -6,6 +6,7 @@ import {
   Bell,
   Building2,
   CalendarDays,
+  DoorOpen,
   ChevronDown,
   CircleDollarSign,
   LayoutDashboard,
@@ -28,6 +29,12 @@ import { cn } from "@/lib/utils";
 const items = [
   { label: "Overview", icon: LayoutDashboard, href: "/admin" },
   { label: "Booking", icon: CalendarDays, href: "/admin/bookings" },
+  {
+    label: "Checkout",
+    icon: DoorOpen,
+    href: "/admin/checkouts",
+    roles: ["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"],
+  },
   { label: "Villa", icon: Building2, href: "/admin/villas" },
   { label: "Pembayaran", icon: CircleDollarSign, href: "/admin/payments" },
   { label: "Customer", icon: Users, href: "/admin/customers" },
@@ -69,7 +76,11 @@ export function AdminPageShell({
     document.documentElement.classList.toggle("dark", next === "dark");
   }, []);
 
-  const visibleItems = items.filter((item) => canAccess(item.href));
+  const visibleItems = items.filter(
+    (item) =>
+      canAccess(item.href) &&
+      (!("roles" in item) || !item.roles || item.roles.includes(profile.role)),
+  );
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";

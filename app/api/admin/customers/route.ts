@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { listAdminCustomers } from "@/lib/admin-customer-service";
+import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
 import { hasPermission } from "@/lib/rbac";
 
 const querySchema = z.object({
@@ -47,6 +48,11 @@ export async function GET(request: Request) {
         totalCustomers: customers.length,
         verifiedCustomers: customers.filter((customer) => customer.verified)
           .length,
+        activeCustomers: customers.filter((customer) => customer.bookings > 0)
+          .length,
+        emeraldCustomers: customers.filter(
+          (customer) => customer.tier === "EMERALD",
+        ).length,
         totalBookings: customers.reduce(
           (total, customer) => total + customer.bookings,
           0,
@@ -62,8 +68,15 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("Admin customer API error", error);
     return NextResponse.json(
-      { message: "Data pelanggan belum dapat dimuat." },
-      { status: 500 },
+      {
+        error: isPrismaDatabaseUnavailableError(error)
+          ? "DATABASE_UNAVAILABLE"
+          : "CUSTOMER_LIST_FAILED",
+        message: isPrismaDatabaseUnavailableError(error)
+          ? "Database PostgreSQL belum tersedia."
+          : "Data pelanggan belum dapat dimuat.",
+      },
+      { status: isPrismaDatabaseUnavailableError(error) ? 503 : 500 },
     );
   }
 }

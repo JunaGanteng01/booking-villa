@@ -44,6 +44,7 @@ export default function ManualPaymentConfirmationPage() {
   const [proofFile, setProofFile] = useState<TransferProofFile | null>(null);
   const [note, setNote] = useState("");
   const [toast, setToast] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const shouldReduceMotion = useReducedMotion();
 
   useEffect(() => {
@@ -85,14 +86,15 @@ export default function ManualPaymentConfirmationPage() {
     }
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!draft || !confirmationValid) {
+    if (!draft || !confirmationValid || submitting) {
       showToast("Lengkapi nama pengirim, bank asal, tanggal transfer, dan bukti pembayaran.", 3200);
       return;
     }
 
+    setSubmitting(true);
     const confirmation: ManualPaymentConfirmation = {
       id: `PAY-${Date.now().toString().slice(-6)}`,
       bookingId: draft.id,
@@ -107,12 +109,42 @@ export default function ManualPaymentConfirmationPage() {
       createdAt: new Date().toISOString(),
     };
 
-    window.sessionStorage.setItem(
-      manualPaymentConfirmationStorageKey,
-      JSON.stringify(confirmation),
-    );
-    showToast("Konfirmasi pembayaran manual tersimpan. Admin akan meninjau bukti mock ini.", 3600);
-    window.setTimeout(() => router.push("/payment/status"), 620);
+    try {
+      const response = await fetch(
+        `/api/bookings/${encodeURIComponent(draft.id)}/payment-confirmation/manual`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderName,
+            senderBank,
+            transferDate,
+            amount: payableAmount,
+            note,
+            proof: {
+              fileName: proofFile?.name,
+              fileType: proofFile?.type,
+              fileSize: proofFile?.size,
+            },
+          }),
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+      if (!response.ok) {
+        showToast(payload?.message || "Bukti pembayaran gagal disimpan.", 3600);
+        return;
+      }
+      window.sessionStorage.setItem(
+        manualPaymentConfirmationStorageKey,
+        JSON.stringify(confirmation),
+      );
+      showToast("Bukti pembayaran tersimpan dan sudah masuk ke Finance.", 3600);
+      window.setTimeout(() => router.push("/payment/status"), 620);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!loaded) {
@@ -329,7 +361,7 @@ export default function ManualPaymentConfirmationPage() {
                   </div>
                 </div>
 
-                <Button className="mt-5 w-full" variant="gold" size="lg" type="submit" disabled={!confirmationValid}>
+                <Button className="mt-5 w-full" variant="gold" size="lg" type="submit" disabled={!confirmationValid || submitting}>
                   <CheckCircle2 />
                   Kirim konfirmasi mock
                 </Button>

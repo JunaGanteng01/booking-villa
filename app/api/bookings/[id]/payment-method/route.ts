@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { getBookingByCode, getBookingById } from "@/lib/booking-store";
+import {
+  BookingPaymentFlowError,
+  getDatabaseBookingRecord,
+  saveDatabasePaymentMethod,
+} from "@/lib/booking-database";
+import { canAccessBooking } from "@/lib/booking-access";
 import {
   getPaymentMethodById,
   savePaymentMethodForBooking,
@@ -14,7 +19,7 @@ export async function POST(request: Request) {
   const bookingId = decodeURIComponent(
     new URL(request.url).pathname.split("/").filter(Boolean)[2] ?? "",
   );
-  const booking = getBookingById(bookingId) ?? getBookingByCode(bookingId);
+  const booking = await getDatabaseBookingRecord(bookingId);
 
   if (!booking) {
     return NextResponse.json(
@@ -23,6 +28,12 @@ export async function POST(request: Request) {
         message: "Pesanan tidak ditemukan.",
       },
       { status: 404 },
+    );
+  }
+  if (!canAccessBooking(request, booking)) {
+    return NextResponse.json(
+      { error: "FORBIDDEN", message: "Anda tidak memiliki akses ke booking ini." },
+      { status: 403 },
     );
   }
 
@@ -62,6 +73,37 @@ export async function POST(request: Request) {
     );
   }
 
+  let databasePayment;
+  try {
+    databasePayment = await saveDatabasePaymentMethod({
+      bookingIdentifier: booking.id,
+      method,
+    });
+  } catch (error) {
+    if (error instanceof BookingPaymentFlowError) {
+      return NextResponse.json(
+        { error: error.code, message: error.message },
+        { status: error.status },
+      );
+    }
+    console.error("Save payment method database error", error);
+    return NextResponse.json(
+      {
+        error: "DATABASE_UNAVAILABLE",
+        message: "Metode pembayaran belum dapat disimpan. Silakan coba kembali.",
+      },
+      { status: 503 },
+    );
+  }
+  if (!databasePayment) {
+    return NextResponse.json(
+      {
+        error: "BOOKING_NOT_FOUND",
+        message: "Pesanan tidak ditemukan di database.",
+      },
+      { status: 404 },
+    );
+  }
   const payment = savePaymentMethodForBooking(booking, method);
   void triggerPaymentMethodSelected(booking, method.title);
 
@@ -72,8 +114,8 @@ export async function POST(request: Request) {
       payment,
     },
     meta: {
-      source: "mock-store",
-      note: "Metode pembayaran tersimpan untuk pesanan ini.",
+      source: "database",
+      note: "Metode pembayaran tersimpan dan dapat dilihat oleh Finance.",
     },
   });
 }

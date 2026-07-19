@@ -83,19 +83,6 @@ export async function POST(request: Request) {
     (account) => account.email.toLowerCase() === email,
   );
 
-  if (demoAuthEnabled && demoAccount) {
-    if (demoAccount.password !== password) return invalidCredentials();
-    return createLoginResponse(
-      {
-        id: demoAccount.id,
-        name: demoAccount.name,
-        email: demoAccount.email,
-        role: demoAccount.role,
-      },
-      rememberMe,
-    );
-  }
-
   try {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user?.passwordHash) return invalidCredentials();
@@ -131,6 +118,19 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+  }
+
+  if (demoAuthEnabled && demoAccount) {
+    if (demoAccount.password !== password) return invalidCredentials();
+    return createLoginResponse(
+      {
+        id: demoAccount.id,
+        name: demoAccount.name,
+        email: demoAccount.email,
+        role: demoAccount.role,
+      },
+      rememberMe,
+    );
   }
 
   const memoryUser = findMemoryAuthUser(email);

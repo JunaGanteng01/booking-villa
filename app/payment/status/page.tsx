@@ -26,39 +26,156 @@ import {
 import { cn } from "@/lib/utils";
 import { formatRupiah } from "@/lib/villa-data";
 
+type LivePaymentStatus = {
+  bookingId: string;
+  bookingCode: string;
+  status: string;
+  paymentStatus: "UNPAID" | "PARTIALLY_PAID" | "PAID" | "FAILED" | "REFUNDED";
+  villa: { id: string; name: string };
+  stay: { checkIn: string; checkOut: string; nights: number; guests: number };
+  guest: { name: string; email: string; phone: string };
+  amount: {
+    payableNow: number;
+    remainingAmount: number;
+    totalAmount: number;
+    currency: string;
+  };
+  paymentMethod: { method?: { title?: string } } | null;
+  manualConfirmation: {
+    id: string;
+    status: "WAITING_REVIEW" | "VERIFIED" | "REJECTED";
+    proof?: { fileName?: string };
+    rejectionReason?: string | null;
+  } | null;
+  nextAction: { type: string; label: string; href: string };
+};
+
 export default function PaymentStatusPage() {
   const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft | null>(null);
   const [manualConfirmation, setManualConfirmation] =
     useState<ManualPaymentConfirmation | null>(null);
+  const [liveStatus, setLiveStatus] = useState<LivePaymentStatus | null>(null);
   const [loaded, setLoaded] = useState(false);
   const shouldReduceMotion = useReducedMotion();
 
   useEffect(() => {
+    let active = true;
+    let identifier = "";
     try {
       const rawBooking = window.sessionStorage.getItem(bookingDraftStorageKey);
       const rawPayment = window.sessionStorage.getItem(paymentDraftStorageKey);
       const rawManual = window.sessionStorage.getItem(manualPaymentConfirmationStorageKey);
-      setBookingDraft(rawBooking ? (JSON.parse(rawBooking) as BookingDraft) : null);
+      const storedBooking = rawBooking
+        ? (JSON.parse(rawBooking) as BookingDraft)
+        : null;
+      setBookingDraft(storedBooking);
       setPaymentDraft(rawPayment ? (JSON.parse(rawPayment) as PaymentDraft) : null);
       setManualConfirmation(
         rawManual ? (JSON.parse(rawManual) as ManualPaymentConfirmation) : null,
       );
+      const params = new URLSearchParams(window.location.search);
+      identifier =
+        params.get("booking") ?? params.get("bookingId") ?? storedBooking?.id ?? "";
     } catch {
       setBookingDraft(null);
       setPaymentDraft(null);
       setManualConfirmation(null);
-    } finally {
-      setLoaded(true);
     }
+
+    if (!identifier) {
+      setLoaded(true);
+      return;
+    }
+
+    const refresh = async () => {
+      try {
+        const response = await fetch(
+          `/api/bookings/${encodeURIComponent(identifier)}/payment-status`,
+          { cache: "no-store", headers: { Accept: "application/json" } },
+        );
+        const payload = (await response.json().catch(() => null)) as
+          | { data?: LivePaymentStatus }
+          | null;
+        if (active && response.ok && payload?.data) {
+          setLiveStatus(payload.data);
+        }
+      } finally {
+        if (active) setLoaded(true);
+      }
+    };
+
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 15_000);
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   const status = useMemo(() => {
+    if (liveStatus?.paymentStatus === "PAID") {
+      return {
+        title: "Pembayaran terverifikasi",
+        description: "Finance telah memverifikasi pembayaran penuh dan booking Anda sudah dikonfirmasi.",
+        tone: "paid" as const,
+        amount: liveStatus.amount.totalAmount,
+      };
+    }
+
+    if (liveStatus?.paymentStatus === "PARTIALLY_PAID") {
+      return {
+        title: "Deposit terverifikasi",
+        description: `Finance telah memverifikasi deposit. Sisa pembayaran ${formatRupiah(liveStatus.amount.remainingAmount)} dapat diselesaikan sesuai ketentuan booking.`,
+        tone: "paid" as const,
+        amount: liveStatus.amount.payableNow,
+      };
+    }
+
+    if (
+      liveStatus?.paymentStatus === "FAILED" ||
+      liveStatus?.manualConfirmation?.status === "REJECTED"
+    ) {
+      return {
+        title: "Bukti pembayaran ditolak",
+        description:
+          liveStatus.manualConfirmation?.rejectionReason ||
+          "Silakan periksa data transfer dan unggah kembali bukti pembayaran.",
+        tone: "failed" as const,
+        amount: liveStatus.amount.payableNow,
+      };
+    }
+
+    if (liveStatus?.manualConfirmation?.status === "WAITING_REVIEW") {
+      return {
+        title: "Menunggu verifikasi Finance",
+        description: "Bukti transfer sudah tersimpan dan sedang ditinjau oleh tim Finance.",
+        tone: "waiting-review" as const,
+        amount: liveStatus.amount.payableNow,
+      };
+    }
+
+    if (liveStatus) {
+      return {
+        title: liveStatus.nextAction.label,
+        description: liveStatus.paymentMethod
+          ? "Metode pembayaran tersimpan. Ikuti langkah berikutnya untuk menyelesaikan booking."
+          : "Pilih metode pembayaran untuk melanjutkan booking.",
+        tone: liveStatus.paymentMethod
+          ? ("method-selected" as const)
+          : ("draft" as const),
+        amount: liveStatus.amount.payableNow,
+      };
+    }
+
     if (manualConfirmation) {
       return {
         title: "Menunggu verifikasi admin",
         description: "Bukti transfer manual sudah diterima sebagai mock dan siap ditinjau.",
-        tone: "waiting" as const,
+        tone: "waiting-review" as const,
         amount: manualConfirmation.amount,
       };
     }
@@ -67,7 +184,7 @@ export default function PaymentStatusPage() {
       return {
         title: "Metode pembayaran dipilih",
         description: "Sesi pembayaran gateway/mock sudah dibuat, lanjutkan proses gateway berikutnya.",
-        tone: "active" as const,
+        tone: "method-selected" as const,
         amount: paymentDraft.amount,
       };
     }
@@ -82,7 +199,7 @@ export default function PaymentStatusPage() {
     }
 
     return null;
-  }, [bookingDraft, manualConfirmation, paymentDraft]);
+  }, [bookingDraft, liveStatus, manualConfirmation, paymentDraft]);
 
   if (!loaded) {
     return (
@@ -100,7 +217,7 @@ export default function PaymentStatusPage() {
     );
   }
 
-  if (!bookingDraft || !status) {
+  if ((!bookingDraft && !liveStatus) || !status) {
     return (
       <main className="grid min-h-screen place-items-center bg-background px-4 text-foreground">
         <div className="max-w-lg rounded-[2rem] border border-emerald-900/10 bg-white/76 p-8 text-center shadow-[0_24px_80px_rgba(4,34,28,0.1)] backdrop-blur-xl dark:border-white/10 dark:bg-white/6">
@@ -121,41 +238,56 @@ export default function PaymentStatusPage() {
     );
   }
 
+  const paymentVerified =
+    liveStatus?.paymentStatus === "PAID" ||
+    liveStatus?.paymentStatus === "PARTIALLY_PAID";
+  const paymentRejected =
+    liveStatus?.paymentStatus === "FAILED" ||
+    liveStatus?.manualConfirmation?.status === "REJECTED";
+  const methodTitle =
+    liveStatus?.paymentMethod?.method?.title ?? paymentDraft?.method.title;
+  const proofName =
+    liveStatus?.manualConfirmation?.proof?.fileName ??
+    manualConfirmation?.proofFile?.name;
+  const bookingIdentifier =
+    liveStatus?.bookingCode ?? bookingDraft?.id ?? "Booking";
   const steps = [
     {
       label: "Booking dibuat",
-      description: bookingDraft.id,
+      description: bookingIdentifier,
       complete: true,
       icon: ReceiptText,
     },
     {
       label: "Metode pembayaran",
-      description: paymentDraft?.method.title ?? "Belum dipilih",
-      complete: Boolean(paymentDraft),
+      description: methodTitle ?? "Belum dipilih",
+      complete: Boolean(methodTitle),
       icon: CreditCard,
     },
     {
       label: "Bukti/redirect",
-      description: manualConfirmation
-        ? manualConfirmation.proofFile?.name ?? "Bukti transfer tersimpan"
+      description: proofName
+        ? proofName
         : paymentDraft
           ? "Gateway mock disiapkan"
           : "Menunggu",
-      complete: Boolean(manualConfirmation || paymentDraft),
+      complete: Boolean(proofName || paymentDraft || paymentVerified),
       icon: FileCheck2,
     },
     {
       label: "Review pembayaran",
-      description: manualConfirmation ? "Menunggu admin" : "Belum dimulai",
-      complete: Boolean(manualConfirmation),
+      description: paymentVerified
+        ? "Terverifikasi Finance"
+        : paymentRejected
+          ? "Ditolak Finance"
+          : liveStatus?.manualConfirmation
+            ? "Sedang ditinjau Finance"
+            : "Belum dimulai",
+      complete: paymentVerified,
       icon: ShieldCheck,
     },
   ];
-  const badgeStatus: PaymentStatusTone = manualConfirmation
-    ? "waiting-review"
-    : paymentDraft
-      ? "method-selected"
-      : "draft";
+  const badgeStatus: PaymentStatusTone = status.tone;
 
   return (
     <main className="min-h-screen overflow-hidden bg-background text-foreground">
@@ -246,22 +378,47 @@ export default function PaymentStatusPage() {
                 {formatRupiah(status.amount)}
               </h3>
               <div className="mt-5 space-y-1 rounded-[1.5rem] bg-emerald-900/5 p-4 dark:bg-white/8">
-                <SummaryRow label="Booking" value={bookingDraft.id} />
-                <SummaryRow label="Villa" value={bookingDraft.villa.name} />
-                <SummaryRow label="Tanggal" value={`${formatDate(bookingDraft.stay.checkIn)} - ${formatDate(bookingDraft.stay.checkOut)}`} />
-                <SummaryRow label="Metode" value={paymentDraft?.method.title ?? "Belum dipilih"} />
-                {manualConfirmation ? (
-                  <SummaryRow label="Konfirmasi" value={manualConfirmation.id} />
+                <SummaryRow label="Booking" value={bookingIdentifier} />
+                <SummaryRow
+                  label="Villa"
+                  value={liveStatus?.villa.name ?? bookingDraft?.villa.name ?? "-"}
+                />
+                <SummaryRow
+                  label="Tanggal"
+                  value={`${formatDate(liveStatus?.stay.checkIn ?? bookingDraft?.stay.checkIn ?? "")} - ${formatDate(liveStatus?.stay.checkOut ?? bookingDraft?.stay.checkOut ?? "")}`}
+                />
+                <SummaryRow label="Metode" value={methodTitle ?? "Belum dipilih"} />
+                {liveStatus?.manualConfirmation || manualConfirmation ? (
+                  <SummaryRow
+                    label="Konfirmasi"
+                    value={
+                      liveStatus?.manualConfirmation?.id ??
+                      manualConfirmation?.id ??
+                      "-"
+                    }
+                  />
                 ) : null}
               </div>
 
               <div className="mt-5 grid gap-3">
-                <InvoiceDownloadButton
-                  booking={bookingDraft}
-                  payment={paymentDraft}
-                  manualConfirmation={manualConfirmation}
-                />
-                {paymentDraft ? (
+                {bookingDraft ? (
+                  <InvoiceDownloadButton
+                    booking={bookingDraft}
+                    payment={paymentDraft}
+                    manualConfirmation={manualConfirmation}
+                  />
+                ) : null}
+                {paymentVerified ? (
+                  <Button asChild variant="gold">
+                    <Link href="/dashboard">Lihat booking saya</Link>
+                  </Button>
+                ) : liveStatus ? (
+                  <Button asChild variant="outline">
+                    <Link href={liveStatus.nextAction.href}>
+                      {liveStatus.nextAction.label}
+                    </Link>
+                  </Button>
+                ) : paymentDraft ? (
                   <Button asChild variant="outline">
                     <Link href={manualConfirmation ? "/payment/manual" : "/payment"}>
                       {manualConfirmation ? "Lihat konfirmasi" : "Ubah metode"}

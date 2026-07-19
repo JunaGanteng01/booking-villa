@@ -4,6 +4,8 @@ export type PermissionKey =
   | "dashboard.view"
   | "bookings.view"
   | "bookings.manage"
+  | "checkouts.view"
+  | "checkouts.manage"
   | "payments.view"
   | "payments.manage"
   | "villas.view"
@@ -19,6 +21,8 @@ const allPermissions: PermissionKey[] = [
   "dashboard.view",
   "bookings.view",
   "bookings.manage",
+  "checkouts.view",
+  "checkouts.manage",
   "payments.view",
   "payments.manage",
   "villas.view",
@@ -31,12 +35,16 @@ const allPermissions: PermissionKey[] = [
   "roles.manage",
 ];
 const permissionsByRole: Record<UserRole, PermissionKey[]> = {
-  SUPER_ADMIN: allPermissions,
-  ADMIN: allPermissions.filter((permission) => permission !== "roles.manage"),
+  SUPER_ADMIN: allPermissions.filter((permission) => permission !== "checkouts.manage"),
+  ADMIN: allPermissions.filter(
+    (permission) => permission !== "roles.manage" && permission !== "checkouts.manage",
+  ),
   RECEPTIONIST: [
     "dashboard.view",
     "bookings.view",
     "bookings.manage",
+    "checkouts.view",
+    "checkouts.manage",
     "villas.view",
     "customers.view",
   ],
@@ -98,6 +106,11 @@ export function requiredPermission(
     pathname.startsWith("/admin/payments")
   )
     return write ? "payments.manage" : "payments.view";
+  if (
+    pathname.startsWith("/api/admin/checkouts") ||
+    pathname.startsWith("/admin/checkouts")
+  )
+    return write ? "checkouts.manage" : "checkouts.view";
   if (
     pathname.startsWith("/api/admin/bookings") ||
     pathname.startsWith("/admin/bookings")

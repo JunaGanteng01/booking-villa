@@ -137,6 +137,11 @@ export function listBookingRecords() {
   );
 }
 
+export function removeBookingRecord(bookingId: string) {
+  bookingStatusHistory.delete(bookingId);
+  return bookingStore.delete(bookingId);
+}
+
 export function updateBookingStatus({
   bookingId,
   status,

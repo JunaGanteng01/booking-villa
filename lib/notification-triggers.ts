@@ -7,6 +7,7 @@ import {
 
 export type PaymentEventStatus =
   | "PAID"
+  | "PARTIALLY_PAID"
   | "PENDING"
   | "FAILED"
   | "EXPIRED"
@@ -35,6 +36,66 @@ export async function triggerBookingCreated(booking: BookingStoreRecord) {
       actionLabel: "Lihat booking",
       actionUrl: "/admin/bookings",
       deduplicationKey: `booking:${booking.id}:created:admin`,
+    }),
+    roleNotification("RECEPTIONIST", booking, {
+      category: "BOOKING",
+      priority: "HIGH",
+      title: `Booking baru ${booking.bookingCode}`,
+      message: `${booking.guest.name} memesan ${booking.villaName} untuk ${booking.nights} malam.`,
+      actionLabel: "Tinjau booking",
+      actionUrl: "/admin/bookings",
+      deduplicationKey: `booking:${booking.id}:created:receptionist`,
+    }),
+  ]);
+}
+
+export async function triggerCheckoutRequested(booking: BookingStoreRecord) {
+  return deliverNotifications("checkout.requested", [
+    {
+      recipientEmail: booking.guest.email,
+      category: "STAY",
+      priority: "HIGH",
+      title: "Permintaan checkout terkirim",
+      message: `Checkout ${booking.bookingCode} menunggu persetujuan Receptionist.`,
+      actionLabel: "Lihat status checkout",
+      actionUrl: "/dashboard",
+      metadata: { ...bookingMetadata(booking), checkoutStatus: "CHECKOUT_REQUESTED" },
+      deduplicationKey: `booking:${booking.id}:checkout:requested:guest`,
+    },
+    roleNotification("RECEPTIONIST", booking, {
+      category: "STAY",
+      priority: "URGENT",
+      title: `Permintaan checkout ${booking.bookingCode}`,
+      message: `${booking.guest.name} meminta checkout dari ${booking.villaName}.`,
+      actionLabel: "Proses checkout",
+      actionUrl: "/admin/checkouts",
+      deduplicationKey: `booking:${booking.id}:checkout:requested:receptionist`,
+      metadata: { checkoutStatus: "CHECKOUT_REQUESTED" },
+    }),
+  ]);
+}
+
+export async function triggerCheckoutConfirmed(booking: BookingStoreRecord) {
+  return deliverNotifications("checkout.confirmed", [
+    {
+      recipientEmail: booking.guest.email,
+      category: "STAY",
+      priority: "HIGH",
+      title: "Checkout berhasil dikonfirmasi",
+      message: `Masa inap ${booking.bookingCode} telah selesai. Terima kasih sudah menginap bersama Villaku.`,
+      actionLabel: "Lihat riwayat",
+      actionUrl: "/dashboard",
+      metadata: { ...bookingMetadata(booking), checkoutStatus: "CHECKED_OUT" },
+      deduplicationKey: `booking:${booking.id}:checkout:confirmed:guest`,
+    },
+    roleNotification("RECEPTIONIST", booking, {
+      category: "STAY",
+      title: `Checkout ${booking.bookingCode} selesai`,
+      message: `${booking.guest.name} telah checkout dan kamar ${booking.villaName} kembali tersedia.`,
+      actionLabel: "Lihat riwayat checkout",
+      actionUrl: "/admin/checkouts",
+      deduplicationKey: `booking:${booking.id}:checkout:confirmed:receptionist`,
+      metadata: { checkoutStatus: "CHECKED_OUT" },
     }),
   ]);
 }
@@ -102,7 +163,7 @@ export async function triggerPaymentStatusChanged({
 }: {
   booking: BookingStoreRecord;
   status: PaymentEventStatus;
-  provider: "MIDTRANS" | "STRIPE";
+  provider: "MIDTRANS" | "STRIPE" | "MANUAL";
   eventId?: string | null;
 }) {
   if (status === "UNKNOWN") return { delivered: 0, failed: 0 };
@@ -135,6 +196,20 @@ export async function triggerPaymentStatusChanged({
       actionLabel: "Buka pembayaran",
       actionUrl: "/admin/payments",
       deduplicationKey: `booking:${booking.id}:payment:${provider.toLowerCase()}:${eventKey}:admin`,
+      metadata: {
+        provider,
+        paymentEventStatus: status,
+        eventId: eventId ?? null,
+      },
+    }),
+    roleNotification("RECEPTIONIST", booking, {
+      category: "PAYMENT",
+      priority: copy.priority,
+      title: copy.adminTitle,
+      message: copy.adminMessage,
+      actionLabel: "Buka booking",
+      actionUrl: "/admin/bookings",
+      deduplicationKey: `booking:${booking.id}:payment:${provider.toLowerCase()}:${eventKey}:receptionist`,
       metadata: {
         provider,
         paymentEventStatus: status,
@@ -226,6 +301,13 @@ function paymentStatusCopy(status: Exclude<PaymentEventStatus, "UNKNOWN">, booki
       guestMessage: `Pembayaran ${amount} untuk ${booking.bookingCode} telah diterima.`,
       adminTitle: `Pembayaran ${booking.bookingCode} berhasil`,
       adminMessage: `${booking.guest.name} telah membayar ${amount}.`,
+    },
+    PARTIALLY_PAID: {
+      priority: "HIGH",
+      guestTitle: "Deposit terverifikasi",
+      guestMessage: `Deposit ${amount} untuk ${booking.bookingCode} telah diterima. Sisa pembayaran dapat diselesaikan sesuai ketentuan booking.`,
+      adminTitle: `Deposit ${booking.bookingCode} terverifikasi`,
+      adminMessage: `Deposit ${booking.guest.name} telah diverifikasi Finance dan booking siap ditindaklanjuti.`,
     },
     PENDING: {
       priority: "NORMAL",

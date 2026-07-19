@@ -33,6 +33,17 @@ enum BookingStatus {
   REFUNDED
 }
 
+enum CheckoutStatus {
+  ACTIVE
+  CHECKOUT_REQUESTED
+  CHECKED_OUT
+}
+
+enum CheckoutChannel {
+  WEBSITE
+  RECEPTION_DESK
+}
+
 enum PaymentStatus {
   UNPAID
   PARTIALLY_PAID
@@ -402,6 +413,7 @@ model Booking {
   notifications     Notification[]
   payments          Payment[]
   statusHistory     BookingStatusHistory[]
+  checkout          Checkout?
 
   @@index([userId])
   @@index([villaId, checkIn, checkOut])
@@ -585,6 +597,51 @@ model BookingStatusHistory {
   @@map("booking_status_history")
 }
 
+model Checkout {
+  id                String          @id @default(cuid())
+  bookingId         String          @unique
+  status            CheckoutStatus  @default(ACTIVE)
+  channel           CheckoutChannel?
+  requestedById     String?
+  processedById     String?
+  requestedAt       DateTime?
+  checkedOutAt      DateTime?
+  guestVerifiedAt   DateTime?
+  paymentVerifiedAt DateTime?
+  notes             String?         @db.Text
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  booking     Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  requestedBy User?           @relation("CheckoutRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  processedBy User?           @relation("CheckoutProcessedBy", fields: [processedById], references: [id], onDelete: SetNull)
+  events      CheckoutEvent[]
+
+  @@index([status, requestedAt])
+  @@index([processedById, checkedOutAt])
+  @@map("checkouts")
+}
+
+model CheckoutEvent {
+  id         String         @id @default(cuid())
+  checkoutId String
+  actorId    String?
+  fromStatus CheckoutStatus?
+  toStatus   CheckoutStatus
+  eventType  String         @db.VarChar(80)
+  notes      String?        @db.Text
+  metadata   Json?
+  createdAt  DateTime       @default(now())
+
+  checkout Checkout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+  actor    User?    @relation("CheckoutEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([checkoutId, createdAt])
+  @@index([actorId])
+  @@index([toStatus, createdAt])
+  @@map("checkout_events")
+}
+
 enum UserRole {
   SUPER_ADMIN
   ADMIN
@@ -632,6 +689,9 @@ model User {
   refundProcesses      Refund[]               @relation("RefundProcessedBy")
   accessRoles          UserAccessRole[]       @relation("UserAssignedRoles")
   roleAssignments      UserAccessRole[]       @relation("RoleAssignedBy")
+  checkoutRequests     Checkout[]             @relation("CheckoutRequestedBy")
+  checkoutProcesses    Checkout[]             @relation("CheckoutProcessedBy")
+  checkoutEvents       CheckoutEvent[]        @relation("CheckoutEventActor")
 
   @@index([status, role])
   @@index([department])

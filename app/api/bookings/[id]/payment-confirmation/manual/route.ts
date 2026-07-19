@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { getBookingByCode, getBookingById } from "@/lib/booking-store";
+import {
+  BookingPaymentFlowError,
+  getDatabaseBookingRecord,
+  getDatabasePaymentSelection,
+  saveDatabaseManualPaymentProof,
+} from "@/lib/booking-database";
+import { canAccessBooking } from "@/lib/booking-access";
 import {
   getSavedPaymentMethod,
   saveManualPaymentProof,
@@ -23,7 +29,7 @@ export async function POST(request: Request) {
   const bookingId = decodeURIComponent(
     new URL(request.url).pathname.split("/").filter(Boolean)[2] ?? "",
   );
-  const booking = getBookingById(bookingId) ?? getBookingByCode(bookingId);
+  const booking = await getDatabaseBookingRecord(bookingId);
 
   if (!booking) {
     return NextResponse.json(
@@ -34,9 +40,16 @@ export async function POST(request: Request) {
       { status: 404 },
     );
   }
+  if (!canAccessBooking(request, booking)) {
+    return NextResponse.json(
+      { error: "FORBIDDEN", message: "Anda tidak memiliki akses ke booking ini." },
+      { status: 403 },
+    );
+  }
 
   const savedPayment = getSavedPaymentMethod(booking.id);
-  if (!savedPayment) {
+  const databasePayment = await getDatabasePaymentSelection(booking.id);
+  if (!savedPayment && !databasePayment) {
     return NextResponse.json(
       {
         error: "PAYMENT_METHOD_REQUIRED",
@@ -46,7 +59,9 @@ export async function POST(request: Request) {
     );
   }
 
-  if (savedPayment.method.id !== "bank-transfer") {
+  const selectedMethodId =
+    savedPayment?.method.id ?? databasePayment?.paymentMethod?.code;
+  if (selectedMethodId !== "bank-transfer") {
     return NextResponse.json(
       {
         error: "PAYMENT_METHOD_NOT_MANUAL",
@@ -71,6 +86,42 @@ export async function POST(request: Request) {
     );
   }
 
+  let databaseProof;
+  try {
+    databaseProof = await saveDatabaseManualPaymentProof({
+      bookingIdentifier: booking.id,
+      senderName: input.data.senderName,
+      senderBank: input.data.senderBank,
+      transferDate: input.data.transferDate,
+      amount: input.data.amount,
+      note: input.data.note,
+      proof: input.data.proof,
+    });
+  } catch (error) {
+    if (error instanceof BookingPaymentFlowError) {
+      return NextResponse.json(
+        { error: error.code, message: error.message },
+        { status: error.status },
+      );
+    }
+    console.error("Save manual payment proof database error", error);
+    return NextResponse.json(
+      {
+        error: "DATABASE_UNAVAILABLE",
+        message: "Bukti transfer belum dapat disimpan. Silakan coba kembali.",
+      },
+      { status: 503 },
+    );
+  }
+  if (!databaseProof) {
+    return NextResponse.json(
+      {
+        error: "PAYMENT_NOT_FOUND",
+        message: "Tagihan pembayaran tidak ditemukan di database.",
+      },
+      { status: 404 },
+    );
+  }
   const proof = saveManualPaymentProof({
     booking,
     senderName: input.data.senderName,
@@ -88,7 +139,7 @@ export async function POST(request: Request) {
       data: {
         bookingId: booking.id,
         bookingCode: booking.bookingCode,
-        payment: savedPayment,
+        payment: savedPayment ?? databasePayment,
         proof,
         nextAction: {
           type: "WAITING_REVIEW",
@@ -96,8 +147,8 @@ export async function POST(request: Request) {
         },
       },
       meta: {
-        source: "mock-store",
-        note: "File belum diunggah ke storage asli; metadata bukti transfer disimpan sebagai mock.",
+        source: "database",
+        note: "Metadata bukti transfer tersimpan di PostgreSQL dan siap ditinjau Finance.",
       },
     },
     { status: 201 },

@@ -12,6 +12,7 @@ import {
   CircleDollarSign,
   Clock3,
   Download,
+  DoorOpen,
   Eye,
   LayoutDashboard,
   LogOut,
@@ -40,7 +41,12 @@ import { cn } from "@/lib/utils";
 
 type BookingStatus =
   "PENDING" | "CONFIRMED" | "CHECKED_IN" | "COMPLETED" | "CANCELLED";
-type PaymentStatus = "PAID" | "PENDING" | "FAILED" | "REFUNDED";
+type PaymentStatus =
+  | "PAID"
+  | "PARTIALLY_PAID"
+  | "PENDING"
+  | "FAILED"
+  | "REFUNDED";
 
 type BookingItem = {
   id: string;
@@ -50,6 +56,8 @@ type BookingItem = {
   initials: string;
   villa: string;
   image: string;
+  checkInIso?: string;
+  checkOutIso?: string;
   checkIn: string;
   checkOut: string;
   nights: number;
@@ -212,6 +220,10 @@ const paymentMeta: Record<PaymentStatus, { label: string; className: string }> =
       label: "Lunas",
       className: "text-emerald-700 dark:text-emerald-300",
     },
+    PARTIALLY_PAID: {
+      label: "Deposit terverifikasi",
+      className: "text-emerald-700 dark:text-emerald-300",
+    },
     PENDING: {
       label: "Menunggu bayar",
       className: "text-amber-700 dark:text-amber-300",
@@ -231,6 +243,7 @@ const navItems = [
     href: "/admin/bookings",
     active: true,
   },
+  { label: "Checkout", icon: DoorOpen, href: "/admin/checkouts" },
   { label: "Villa", icon: Building2, href: "/admin/villas" },
   { label: "Pembayaran", icon: CircleDollarSign, href: "/admin/payments" },
   { label: "Customer", icon: Users, href: "/admin/customers" },
@@ -278,27 +291,38 @@ export default function AdminBookingListPage() {
   useEffect(() => {
     if (!profile.role) return;
     const controller = new AbortController();
-
-    void fetch("/api/admin/bookings", {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-      signal: controller.signal,
-    })
-      .then(async (response) => {
+    const refreshBookings = async () => {
+      try {
+        const response = await fetch("/api/admin/bookings", {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        });
         if (!response.ok) throw new Error("BOOKING_SYNC_FAILED");
-        return (await response.json()) as {
+        const payload = (await response.json()) as {
           data?: { bookings?: BookingStoreRecord[] };
         };
-      })
-      .then((payload) => {
         const liveBookings = (payload.data?.bookings ?? []).map(toBookingItem);
         setBookingItems(liveBookings);
-      })
-      .catch((error: unknown) => {
+        setSelectedBooking((current) =>
+          current
+            ? liveBookings.find((item) => item.id === current.id) ?? current
+            : current,
+        );
+      } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
-      });
+      }
+    };
 
-    return () => controller.abort();
+    void refreshBookings();
+    const interval = window.setInterval(() => void refreshBookings(), 15_000);
+    const onFocus = () => void refreshBookings();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [profile.role]);
 
   useEffect(() => {
@@ -558,8 +582,8 @@ export default function AdminBookingListPage() {
           <div className="mt-7 grid grid-cols-2 gap-3 xl:grid-cols-4">
             <Metric
               label="Total booking"
-              value="156"
-              helper="Bulan berjalan"
+              value={String(bookingItems.length)}
+              helper="Data PostgreSQL"
               icon={CalendarDays}
               tone="emerald"
             />
@@ -574,15 +598,21 @@ export default function AdminBookingListPage() {
             />
             <Metric
               label="Check-in hari ini"
-              value="4"
+              value={String(
+                bookingItems.filter(
+                  (item) => item.checkInIso === formatIsoDate(new Date()),
+                ).length,
+              )}
               helper="Tamu tiba"
               icon={CalendarCheck2}
               tone="sky"
             />
             <Metric
               label="Nilai reservasi"
-              value="Rp842jt"
-              helper="Bulan berjalan"
+              value={compactRupiah(
+                bookingItems.reduce((total, item) => total + item.total, 0),
+              )}
+              helper="Seluruh booking"
               icon={CircleDollarSign}
               tone="rose"
             />
@@ -1215,7 +1245,12 @@ function toInvoiceBooking(item: BookingItem): BookingStoreRecord {
       taxTotal,
       totalAmount: item.total,
       depositAmount: item.total,
-      remainingAmount: item.payment === "PAID" ? 0 : item.total,
+      remainingAmount:
+        item.payment === "PAID"
+          ? 0
+          : item.payment === "PARTIALLY_PAID"
+            ? Math.max(item.total - Math.round(item.total * 0.3), 0)
+            : item.total,
       currency: "IDR",
     },
     expiresAt: now,
@@ -1236,6 +1271,8 @@ function toBookingItem(booking: BookingStoreRecord): BookingItem {
     image:
       demoMatch?.image ||
       "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=400&q=80",
+    checkInIso: booking.checkIn,
+    checkOutIso: booking.checkOut,
     checkIn: formatBookingDate(booking.checkIn),
     checkOut: formatBookingDate(booking.checkOut),
     nights: booking.nights,
@@ -1256,6 +1293,7 @@ function bookingStatusForAdmin(status: BookingStoreRecord["status"]): BookingSta
 
 function paymentStatusForAdmin(status: BookingStoreRecord["paymentStatus"]): PaymentStatus {
   if (status === "PAID") return "PAID";
+  if (status === "PARTIALLY_PAID") return "PARTIALLY_PAID";
   if (status === "FAILED") return "FAILED";
   if (status === "REFUNDED") return "REFUNDED";
   return "PENDING";
@@ -1300,8 +1338,20 @@ function formatIsoDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function compactRupiah(value: number) {
+  if (value === 0) return "Rp 0";
+
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
 function paymentProvider(status: PaymentStatus) {
   if (status === "PAID") return "MIDTRANS";
+  if (status === "PARTIALLY_PAID") return "MANUAL_TRANSFER";
   if (status === "REFUNDED") return "REFUND";
   return "MANUAL_TRANSFER";
 }

@@ -33,60 +33,28 @@ type Payment = {
   transferAt: string;
   uploadedAt: string;
   status: VerificationStatus;
+  proofId: string | null;
+  reviewable: boolean;
   note?: string;
 };
 
-const initialPayments: Payment[] = [
-  {
-    id: "pay-3814",
-    booking: "VLK-260823-1482",
-    guest: "Maya Putri",
-    villa: "Villa Aruna Cliffside",
-    amount: 21312000,
-    bank: "BCA",
-    account: "MAYA PUTRI",
-    transferAt: "14 Jul 2026, 09.34",
-    uploadedAt: "8 menit lalu",
-    status: "WAITING",
-  },
-  {
-    id: "pay-3788",
-    booking: "VLK-260902-1519",
-    guest: "Rizky Ananda",
-    villa: "Sagara Beach House",
-    amount: 29400000,
-    bank: "Mandiri",
-    account: "RIZKY ANANDA",
-    transferAt: "14 Jul 2026, 08.02",
-    uploadedAt: "1 jam lalu",
-    status: "WAITING",
-  },
-  {
-    id: "pay-3711",
-    booking: "VLK-260812-1441",
-    guest: "Daniel Wijaya",
-    villa: "Luna Honeymoon Villa",
-    amount: 9912000,
-    bank: "BNI",
-    account: "DANIEL W",
-    transferAt: "13 Jul 2026, 17.48",
-    uploadedAt: "Kemarin",
-    status: "VERIFIED",
-  },
-  {
-    id: "pay-3692",
-    booking: "VLK-260819-1467",
-    guest: "Sofia Laurent",
-    villa: "Nara Jungle Residence",
-    amount: 16352000,
-    bank: "CIMB Niaga",
-    account: "SOFIA L",
-    transferAt: "13 Jul 2026, 12.11",
-    uploadedAt: "Kemarin",
-    status: "REJECTED",
-    note: "Nominal bukti tidak sesuai dengan tagihan.",
-  },
-];
+type PaymentTransactionApi = {
+  id: string;
+  bookingCode: string;
+  guestName: string;
+  villaName: string;
+  method: string;
+  provider: string;
+  amount: number;
+  status: string;
+  senderName: string;
+  senderBank: string;
+  transferDate: string | null;
+  proofId: string | null;
+  proofStatus: "PENDING" | "VERIFIED" | "REJECTED" | null;
+  paidAt: string | null;
+  createdAt: string;
+};
 
 const statusMeta: Record<
   VerificationStatus,
@@ -118,26 +86,106 @@ const money = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 });
 
+function toPaymentItem(transaction: PaymentTransactionApi): Payment {
+  const status: VerificationStatus =
+    transaction.proofStatus === "VERIFIED" || transaction.status === "PAID"
+      ? "VERIFIED"
+      : transaction.proofStatus === "REJECTED" || transaction.status === "FAILED"
+        ? "REJECTED"
+        : "WAITING";
+  const reviewable = transaction.proofStatus === "PENDING";
+  return {
+    id: transaction.id,
+    booking: transaction.bookingCode,
+    guest: transaction.guestName,
+    villa: transaction.villaName,
+    amount: transaction.amount,
+    bank: transaction.senderBank || transaction.method || transaction.provider,
+    account: transaction.senderName || transaction.guestName,
+    transferAt: formatPaymentDate(
+      transaction.transferDate || transaction.paidAt || transaction.createdAt,
+    ),
+    uploadedAt: formatPaymentDate(transaction.createdAt),
+    status,
+    proofId: transaction.proofId,
+    reviewable,
+    note: reviewable
+      ? undefined
+      : status === "WAITING"
+        ? "Menunggu user mengunggah bukti pembayaran."
+        : undefined,
+  };
+}
+
+function formatPaymentDate(value: string) {
+  const date = new Date(
+    /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value,
+  );
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: /^\d{4}-\d{2}-\d{2}$/.test(value) ? undefined : "short",
+  }).format(date);
+}
+
 export default function PaymentVerificationPage() {
   const reduceMotion = useReducedMotion();
   const { notify } = useAppNotifications();
-  const [payments, setPayments] = useState(initialPayments);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"ALL" | VerificationStatus>("ALL");
-  const [selected, setSelected] = useState<Payment | null>(initialPayments[0]);
+  const [selected, setSelected] = useState<Payment | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/admin/payments/transactions?limit=100&sort=newest", {
+      cache: "no-store",
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("PAYMENT_SYNC_FAILED");
+        return (await response.json()) as {
+          transactions?: PaymentTransactionApi[];
+        };
+      })
+      .then((payload) => {
+        const livePayments = (payload.transactions ?? []).map(toPaymentItem);
+        setPayments(livePayments);
+        const bookingCode = new URLSearchParams(window.location.search).get(
+          "booking",
+        );
+        setSelected(
+          livePayments.find(
+            (payment) =>
+              bookingCode &&
+              payment.booking.toLowerCase() === bookingCode.toLowerCase(),
+          ) ?? livePayments[0] ?? null,
+        );
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        notify({
+          title: "Data pembayaran gagal dimuat",
+          description: "Periksa koneksi PostgreSQL lalu muat ulang halaman.",
+          variant: "warning",
+        });
+      });
+    return () => controller.abort();
+  }, [notify]);
 
   useEffect(() => {
     const bookingCode = new URLSearchParams(window.location.search).get(
       "booking",
     );
     if (!bookingCode) return;
-    const match = initialPayments.find(
+    const match = payments.find(
       (payment) => payment.booking.toLowerCase() === bookingCode.toLowerCase(),
     );
     if (!match) return;
     setSelected(match);
     setQuery(match.booking);
-  }, []);
+  }, [payments]);
 
   const visible = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("id-ID");
@@ -151,11 +199,45 @@ export default function PaymentVerificationPage() {
     );
   }, [filter, payments, query]);
 
-  const updateStatus = (status: VerificationStatus) => {
+  const updateStatus = async (status: VerificationStatus) => {
     if (!selected) return;
+    if (!selected.reviewable || !selected.proofId) {
+      notify({
+        title: "Bukti pembayaran belum tersedia",
+        description: "Tunggu user mengunggah bukti transfer sebelum diverifikasi.",
+        variant: "warning",
+      });
+      return;
+    }
+    const response = await fetch(
+      `/api/admin/payments/${encodeURIComponent(selected.proofId)}/manual-confirmation`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: status === "VERIFIED" ? "VERIFY" : "REJECT",
+          reason:
+            status === "REJECTED"
+              ? "Bukti pembayaran membutuhkan konfirmasi ulang dari tamu."
+              : null,
+        }),
+      },
+    );
+    const payload = (await response.json().catch(() => null)) as
+      | { message?: string }
+      | null;
+    if (!response.ok) {
+      notify({
+        title: "Status pembayaran gagal diperbarui",
+        description: payload?.message || "Silakan coba kembali.",
+        variant: "warning",
+      });
+      return;
+    }
     const updated = {
       ...selected,
       status,
+      reviewable: false,
       note:
         status === "REJECTED"
           ? "Bukti pembayaran membutuhkan konfirmasi ulang dari tamu."
@@ -301,8 +383,8 @@ export default function PaymentVerificationPage() {
                 key={selected.id}
                 item={selected}
                 reduceMotion={Boolean(reduceMotion)}
-                onVerify={() => updateStatus("VERIFIED")}
-                onReject={() => updateStatus("REJECTED")}
+                onVerify={() => void updateStatus("VERIFIED")}
+                onReject={() => void updateStatus("REJECTED")}
               />
             ) : (
               <div className="grid min-h-96 place-items-center rounded-[1.7rem] border border-dashed border-emerald-950/12 text-sm opacity-45 dark:border-white/12">
@@ -396,7 +478,7 @@ function VerificationPanel({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[0.62rem] font-bold uppercase tracking-[0.15em] text-emerald-700 dark:text-emerald-300">
-              Bukti transfer
+              {item.reviewable ? "Bukti transfer" : "Status pembayaran"}
             </p>
             <h2 className="mt-2 font-serif text-2xl font-semibold">
               {item.booking}
@@ -421,7 +503,7 @@ function VerificationPanel({
             <CreditCard className="size-5 opacity-45" />
           </div>
           <p className="mt-7 text-[0.6rem] uppercase tracking-[0.14em] opacity-45">
-            Transfer berhasil
+            {item.reviewable ? "Transfer dilaporkan" : "Menunggu bukti pembayaran"}
           </p>
           <p className="mt-1 text-2xl font-bold">{money.format(item.amount)}</p>
           <div className="mt-6 grid grid-cols-2 gap-3 border-t border-current/10 pt-4 text-xs">
@@ -449,6 +531,7 @@ function VerificationPanel({
           <button
             type="button"
             onClick={onReject}
+            disabled={!item.reviewable}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-rose-500/20 text-sm font-bold text-rose-600 dark:text-rose-300"
           >
             <X className="size-4" /> Tolak
@@ -456,14 +539,16 @@ function VerificationPanel({
           <button
             type="button"
             onClick={onVerify}
+            disabled={!item.reviewable}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-emerald-700 text-sm font-bold text-white"
           >
             <Check className="size-4" /> Verifikasi
           </button>
         </div>
         <p className="mt-3 text-center text-[0.62rem] leading-4 opacity-38">
-          Aksi akan memperbarui status booking dan mengirim notifikasi kepada
-          tamu.
+          {item.reviewable
+            ? "Aksi akan memperbarui booking untuk Receptionist dan Finance."
+            : "User sudah tercatat, tetapi bukti transfer belum diunggah."}
         </p>
       </div>
     </motion.aside>
