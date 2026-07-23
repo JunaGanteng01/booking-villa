@@ -294,6 +294,14 @@ function CheckoutDialog({ item, canConfirm, onClose, onConfirmed }: { item: Chec
   const [error, setError] = useState<string | null>(null);
   const historyOnly = item.checkout.status === "CHECKED_OUT";
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   const confirm = async () => {
     setSaving(true);
     setError(null);
@@ -320,18 +328,18 @@ function CheckoutDialog({ item, canConfirm, onClose, onConfirmed }: { item: Chec
   };
 
   return (
-    <motion.div className="fixed inset-0 z-[80] grid place-items-center bg-emerald-950/65 p-3 backdrop-blur-md" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={onClose}>
-      <motion.div role="dialog" aria-modal="true" aria-label="Proses checkout" initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12 }} onMouseDown={(event) => event.stopPropagation()} className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] bg-[#fffdf8] text-emerald-950 shadow-2xl dark:bg-[#0c1d19] dark:text-white">
-        <div className="flex items-start justify-between border-b border-emerald-950/8 p-6 dark:border-white/8">
-          <div>
+    <motion.div className="fixed inset-0 z-[80] grid place-items-center overflow-hidden bg-emerald-950/65 p-0 backdrop-blur-md sm:p-3" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={onClose}>
+      <motion.div role="dialog" aria-modal="true" aria-label="Proses checkout" initial={{ opacity: 0, y: 24, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12 }} onMouseDown={(event) => event.stopPropagation()} className="flex h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-none bg-[#fffdf8] text-emerald-950 shadow-2xl dark:bg-[#0c1d19] dark:text-white sm:h-auto sm:max-h-[92dvh] sm:rounded-[2rem]">
+        <div className="flex shrink-0 items-start justify-between border-b border-emerald-950/8 p-4 dark:border-white/8 sm:p-6">
+          <div className="min-w-0">
             <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">{historyOnly ? "Riwayat checkout" : "Verifikasi checkout"}</p>
-            <h2 className="mt-2 font-serif text-3xl font-semibold">{item.guest.name}</h2>
-            <p className="mt-1 text-xs opacity-48">{item.bookingCode} · {item.villa.name}</p>
+            <h2 className="mt-2 break-words font-serif text-2xl font-semibold sm:text-3xl">{item.guest.name}</h2>
+            <p className="mt-1 break-words text-xs opacity-48">{item.bookingCode} · {item.villa.name}</p>
           </div>
-          <button type="button" onClick={onClose} className="grid size-10 place-items-center rounded-full bg-emerald-950/6 dark:bg-white/7" aria-label="Tutup"><X className="size-4" /></button>
+          <button type="button" onClick={onClose} className="grid size-10 shrink-0 place-items-center rounded-full bg-emerald-950/6 dark:bg-white/7" aria-label="Tutup"><X className="size-4" /></button>
         </div>
 
-        <div className="space-y-5 p-6">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
           <div className="grid gap-3 sm:grid-cols-2">
             <DetailCard icon={UserCheck} label="Data tamu" value={`${item.guest.email} · ${item.guest.phone}`} />
             <DetailCard icon={CalendarClock} label="Masa inap" value={`${formatDate(item.stay.checkIn)} – ${formatDate(item.stay.checkOut)}`} />
@@ -378,10 +386,10 @@ function CheckoutDialog({ item, canConfirm, onClose, onConfirmed }: { item: Chec
           )}
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2 border-t border-emerald-950/8 p-5 dark:border-white/8">
-          <button type="button" onClick={onClose} className="min-h-11 rounded-full border border-emerald-950/10 px-5 text-sm font-semibold dark:border-white/10">Tutup</button>
+        <div className="grid shrink-0 grid-cols-1 gap-2 border-t border-emerald-950/8 p-3 dark:border-white/8 sm:flex sm:flex-wrap sm:justify-end sm:p-5">
+          <button type="button" onClick={onClose} className="min-h-11 w-full rounded-full border border-emerald-950/10 px-5 text-sm font-semibold dark:border-white/10 sm:w-auto">Tutup</button>
           {!historyOnly && canConfirm ? (
-            <button type="button" disabled={saving || !guestVerified || !paymentVerified || !item.checkout.paymentReady} onClick={() => void confirm()} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-emerald-700 px-5 text-sm font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40">
+            <button type="button" disabled={saving || !guestVerified || !paymentVerified || !item.checkout.paymentReady} onClick={() => void confirm()} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-emerald-700 px-5 text-sm font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto">
               {saving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />} Konfirmasi Checkout
             </button>
           ) : null}

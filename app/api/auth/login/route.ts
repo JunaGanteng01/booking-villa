@@ -83,6 +83,17 @@ export async function POST(request: Request) {
 
   if (demoAuthEnabled && demoAccount) {
     if (demoAccount.password !== password) return invalidCredentials();
+    try {
+      const databaseAccount = await prisma.user.findUnique({
+        where: { email: demoAccount.email.toLowerCase() },
+        select: { id: true, name: true, email: true, role: true },
+      });
+      if (databaseAccount && databaseAccount.role === demoAccount.role) {
+        return createLoginResponse(databaseAccount, rememberMe);
+      }
+    } catch {
+      // Akun demo tetap dapat digunakan ketika database sementara tidak tersedia.
+    }
     return createLoginResponse(
       {
         id: demoAccount.id,

@@ -992,9 +992,18 @@ function BookingDetailModal({
       setReviewBusy(null);
     }
   };
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   return (
     <motion.div
-      className="fixed inset-0 z-[70] flex items-end justify-center bg-emerald-950/60 p-0 backdrop-blur-lg sm:items-center sm:p-4"
+      className="fixed inset-0 z-[70] flex items-end justify-center overflow-hidden bg-emerald-950/60 p-0 backdrop-blur-lg sm:items-center sm:p-4"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -1007,11 +1016,11 @@ function BookingDetailModal({
         initial={reduceMotion ? false : { opacity: 0, y: 24, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={reduceMotion ? undefined : { opacity: 0, y: 18, scale: 0.98 }}
-        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-t-[2rem] border border-white/10 bg-[#fffdf8] shadow-2xl dark:bg-[#0c1c18] sm:rounded-[2rem]"
+        className="flex h-[100dvh] min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-none border border-white/10 bg-[#fffdf8] shadow-2xl dark:bg-[#0c1c18] sm:h-auto sm:max-h-[calc(100dvh-2rem)] sm:rounded-[2rem]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-start justify-between border-b border-emerald-950/8 bg-[#fffdf8]/92 p-5 backdrop-blur-xl dark:border-white/8 dark:bg-[#0c1c18]/92 sm:p-6">
-          <div>
+        <div className="z-10 flex shrink-0 items-start justify-between border-b border-emerald-950/8 bg-[#fffdf8]/96 p-4 backdrop-blur-xl dark:border-white/8 dark:bg-[#0c1c18]/96 sm:p-5 lg:px-6">
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span
                 className={cn(
@@ -1043,15 +1052,16 @@ function BookingDetailModal({
           <button
             type="button"
             onClick={onClose}
-            className="grid size-10 place-items-center rounded-full bg-emerald-950/5 transition hover:rotate-90 dark:bg-white/7"
+            className="grid size-10 shrink-0 place-items-center rounded-full bg-emerald-950/5 transition hover:rotate-90 dark:bg-white/7"
             aria-label="Tutup detail booking"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+          <div className="grid min-w-0 gap-5 p-4 sm:p-5 lg:px-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+          <div className="min-w-0 space-y-5">
             <div className="overflow-hidden rounded-2xl border border-emerald-950/8 dark:border-white/8">
               <img
                 src={item.image}
@@ -1059,7 +1069,9 @@ function BookingDetailModal({
                 className="h-40 w-full object-cover"
               />
               <div className="p-4">
-                <p className="font-serif text-xl font-semibold">{item.villa}</p>
+                <p className="break-words font-serif text-xl font-semibold">
+                  {item.villa}
+                </p>
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <Detail label="Check-in" value={item.checkIn} />
                   <Detail label="Check-out" value={item.checkOut} />
@@ -1079,7 +1091,7 @@ function BookingDetailModal({
             </div>
           </div>
 
-          <div className="space-y-5">
+          <div className="min-w-0 space-y-5">
             <div className="rounded-2xl bg-emerald-950 p-5 text-white">
               <p className="text-[0.62rem] font-bold uppercase tracking-[0.15em] text-amber-200">
                 Informasi tamu
@@ -1088,21 +1100,23 @@ function BookingDetailModal({
                 <span className="grid size-11 place-items-center rounded-full bg-white/10 text-sm font-bold">
                   {item.initials}
                 </span>
-                <div>
-                  <p className="font-semibold">{item.guest}</p>
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">{item.guest}</p>
                   <p className="mt-1 text-xs text-white/48">
                     Verifikasi identitas saat kedatangan
                   </p>
                 </div>
               </div>
               <div className="mt-4 space-y-2 border-t border-white/10 pt-4 text-xs">
-                <p className="flex items-center justify-between gap-3">
+                <p className="flex min-w-0 items-center justify-between gap-3">
                   <span className="text-white/45">Email</span>
-                  <span className="truncate font-semibold">{item.email}</span>
+                  <span className="min-w-0 truncate text-right font-semibold">
+                    {item.email}
+                  </span>
                 </p>
-                <p className="flex items-center justify-between">
+                <p className="flex min-w-0 items-center justify-between gap-3">
                   <span className="text-white/45">Telepon</span>
-                  <span className="font-semibold">
+                  <span className="min-w-0 break-words text-right font-semibold">
                     {item.phone || "Belum tersedia"}
                   </span>
                 </p>
@@ -1162,7 +1176,8 @@ function BookingDetailModal({
             </p>
           </div>
         </div>
-        <div className="sticky bottom-0 border-t border-emerald-950/8 bg-[#fffdf8]/94 p-4 backdrop-blur-xl dark:border-white/8 dark:bg-[#0c1c18]/94 sm:px-6">
+        </div>
+        <div className="z-10 shrink-0 border-t border-emerald-950/8 bg-[#fffdf8]/96 p-3 backdrop-blur-xl dark:border-white/8 dark:bg-[#0c1c18]/96 sm:p-4 sm:px-6">
           <AnimatePresence initial={false}>
             {reviewOpen ? (
               <motion.div
@@ -1216,18 +1231,18 @@ function BookingDetailModal({
               </motion.div>
             ) : null}
           </AnimatePresence>
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:justify-end">
             <button
               type="button"
               onClick={onClose}
-              className="min-h-10 rounded-full border border-emerald-950/10 px-5 text-sm font-semibold dark:border-white/10"
+              className="min-h-10 w-full rounded-full border border-emerald-950/10 px-5 text-sm font-semibold dark:border-white/10 sm:w-auto"
             >
               Tutup
             </button>
             <button
               type="button"
               onClick={onExport}
-              className="inline-flex min-h-10 items-center gap-2 rounded-full border border-emerald-700/20 bg-emerald-100 px-5 text-sm font-bold text-emerald-800 dark:bg-emerald-300/10 dark:text-emerald-200"
+              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full border border-emerald-700/20 bg-emerald-100 px-5 text-sm font-bold text-emerald-800 dark:bg-emerald-300/10 dark:text-emerald-200 sm:w-auto"
             >
               <Download className="size-4" /> Unduh invoice PDF
             </button>
@@ -1236,7 +1251,7 @@ function BookingDetailModal({
                 type="button"
                 onClick={() => setReviewOpen((current) => !current)}
                 aria-expanded={reviewOpen}
-                className="min-h-10 rounded-full bg-emerald-700 px-5 text-sm font-bold text-white"
+                className="min-h-10 w-full rounded-full bg-emerald-700 px-5 text-sm font-bold text-white sm:w-auto"
               >
                 {reviewOpen ? "Tutup tinjauan" : "Tinjau booking"}
               </button>
@@ -1317,18 +1332,18 @@ function ReceptionCheckInPanel({
   return (
     <form
       onSubmit={submit}
-      className="rounded-2xl border border-amber-400/25 bg-amber-50/70 p-5 dark:border-amber-200/12 dark:bg-amber-200/[0.045]"
+      className="min-w-0 overflow-hidden rounded-2xl border border-amber-400/25 bg-amber-50/70 p-4 dark:border-amber-200/12 dark:bg-amber-200/[0.045] sm:p-5"
     >
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-300/22 text-amber-800 dark:text-amber-200">
           <DoorOpen className="size-5" />
         </span>
-        <div>
+        <div className="min-w-0">
           <p className="text-[0.62rem] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">
             Kontrol kedatangan
           </p>
-          <h3 className="mt-1 font-serif text-xl font-semibold">
-            Pelunasan & check-in
+          <h3 className="mt-1 font-serif text-xl font-semibold sm:text-2xl">
+            <span className="sm:whitespace-nowrap">Pelunasan & check-in</span>
           </h3>
           <p className="mt-1 text-xs leading-5 opacity-50">
             Verifikasi tamu dan catat sisa pembayaran dalam satu proses.
@@ -1351,9 +1366,9 @@ function ReceptionCheckInPanel({
         </span>
       </label>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1.5 text-[0.65rem] font-bold">
-          4 karakter terakhir identitas
+      <div className="mt-4 grid min-w-0 gap-3 2xl:grid-cols-2">
+        <label className="grid min-w-0 gap-1.5 text-[0.65rem] font-bold">
+          4 karakter identitas
           <input
             value={identityLast4}
             maxLength={4}
@@ -1363,18 +1378,18 @@ function ReceptionCheckInPanel({
               )
             }
             placeholder="Contoh: 4281"
-            className="h-11 rounded-xl border border-emerald-950/10 bg-white/70 px-3 text-sm font-normal uppercase outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-white/5"
+            className="h-11 w-full min-w-0 rounded-xl border border-emerald-950/10 bg-white/70 px-3 text-sm font-normal uppercase outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-white/5"
           />
         </label>
-        <label className="grid gap-1.5 text-[0.65rem] font-bold">
-          Sisa yang diterima
-          <span className="flex h-11 items-center rounded-xl border border-emerald-950/8 bg-emerald-950/[0.035] px-3 text-sm font-bold text-emerald-700 dark:border-white/8 dark:bg-white/[0.035] dark:text-emerald-300">
+        <label className="grid min-w-0 gap-1.5 text-[0.65rem] font-bold">
+          Sisa pelunasan
+          <span className="flex h-11 w-full min-w-0 items-center rounded-xl border border-emerald-950/8 bg-emerald-950/[0.035] px-3 text-sm font-bold text-emerald-700 dark:border-white/8 dark:bg-white/[0.035] dark:text-emerald-300">
             {money.format(remaining)}
           </span>
         </label>
         {remaining > 0 ? (
           <>
-            <label className="grid gap-1.5 text-[0.65rem] font-bold">
+            <label className="grid min-w-0 gap-1.5 text-[0.65rem] font-bold">
               Metode pelunasan
               <select
                 value={paymentMethod}
@@ -1383,7 +1398,7 @@ function ReceptionCheckInPanel({
                     event.target.value as typeof paymentMethod,
                   )
                 }
-                className="h-11 rounded-xl border border-emerald-950/10 bg-white/70 px-3 text-sm font-normal outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-[#10231d]"
+                className="h-11 w-full min-w-0 rounded-xl border border-emerald-950/10 bg-white/70 px-3 text-sm font-normal outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-[#10231d]"
               >
                 <option value="CASH">Tunai</option>
                 <option value="BANK_TRANSFER">Transfer Bank</option>
@@ -1391,30 +1406,30 @@ function ReceptionCheckInPanel({
                 <option value="E_WALLET">E-Wallet</option>
               </select>
             </label>
-            <label className="grid gap-1.5 text-[0.65rem] font-bold">
+            <label className="grid min-w-0 gap-1.5 text-[0.65rem] font-bold">
               Referensi pembayaran
               <input
                 value={paymentReference}
                 onChange={(event) => setPaymentReference(event.target.value)}
                 placeholder="Opsional"
-                className="h-11 rounded-xl border border-emerald-950/10 bg-white/70 px-3 text-sm font-normal outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-white/5"
+                className="h-11 w-full min-w-0 rounded-xl border border-emerald-950/10 bg-white/70 px-3 text-sm font-normal outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-white/5"
               />
             </label>
           </>
         ) : (
-          <div className="flex items-center gap-2 rounded-xl bg-emerald-500/9 px-3 py-2.5 text-xs font-semibold text-emerald-800 sm:col-span-2 dark:text-emerald-200">
+          <div className="flex min-w-0 items-center gap-2 rounded-xl bg-emerald-500/9 px-3 py-2.5 text-xs font-semibold text-emerald-800 2xl:col-span-2 dark:text-emerald-200">
             <CreditCard className="size-4" />
             Booking sudah lunas, tidak ada pembayaran tambahan.
           </div>
         )}
-        <label className="grid gap-1.5 text-[0.65rem] font-bold sm:col-span-2">
+        <label className="grid min-w-0 gap-1.5 text-[0.65rem] font-bold 2xl:col-span-2">
           Catatan reception
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
             rows={2}
             placeholder="Opsional, misalnya nomor kamar atau informasi serah terima"
-            className="rounded-xl border border-emerald-950/10 bg-white/70 px-3 py-2.5 text-sm font-normal outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-white/5"
+            className="w-full min-w-0 resize-y rounded-xl border border-emerald-950/10 bg-white/70 px-3 py-2.5 text-sm font-normal outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-white/5"
           />
         </label>
       </div>
@@ -1477,11 +1492,11 @@ function getPaidAmount(item: BookingItem) {
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-[0.62rem] text-emerald-950/38 dark:text-white/36">
         {label}
       </p>
-      <p className="mt-1 text-xs font-bold">{value}</p>
+      <p className="mt-1 break-words text-xs font-bold">{value}</p>
     </div>
   );
 }
@@ -1496,10 +1511,10 @@ function PriceRow({
   strong?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex min-w-0 items-center justify-between gap-3">
       <span
         className={cn(
-          "text-emerald-950/48 dark:text-white/46",
+          "min-w-0 text-emerald-950/48 dark:text-white/46",
           strong && "font-bold text-emerald-950 dark:text-white",
         )}
       >
@@ -1507,7 +1522,7 @@ function PriceRow({
       </span>
       <span
         className={cn(
-          "font-semibold",
+          "shrink-0 text-right font-semibold",
           strong && "text-base text-emerald-700 dark:text-emerald-300",
         )}
       >

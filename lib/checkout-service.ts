@@ -42,8 +42,22 @@ export class CheckoutFlowError extends Error {
 }
 
 export async function listUserCheckoutBookings(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
+  if (!user) return [];
+
   const records = await prisma.booking.findMany({
-    where: { userId },
+    where: {
+      OR: [
+        { userId },
+        {
+          userId: null,
+          guestEmail: { equals: user.email, mode: "insensitive" },
+        },
+      ],
+    },
     include: checkoutInclude,
     orderBy: { createdAt: "desc" },
   });
@@ -86,6 +100,14 @@ export async function requestWebsiteCheckout({
   notes?: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
+    const actor = await tx.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true },
+    });
+    if (!actor) {
+      throw new CheckoutFlowError("USER_NOT_FOUND", "Akun user tidak ditemukan.", 404);
+    }
+
     const booking = await tx.booking.findFirst({
       where: { OR: [{ id: bookingIdentifier }, { bookingCode: bookingIdentifier }] },
       include: { checkout: true },
@@ -93,7 +115,10 @@ export async function requestWebsiteCheckout({
     if (!booking) {
       throw new CheckoutFlowError("BOOKING_NOT_FOUND", "Booking tidak ditemukan.", 404);
     }
-    if (booking.userId !== userId) {
+    const canClaimByGuestEmail =
+      booking.userId === null &&
+      booking.guestEmail.toLowerCase() === actor.email.toLowerCase();
+    if (booking.userId !== userId && !canClaimByGuestEmail) {
       throw new CheckoutFlowError(
         "FORBIDDEN",
         "Anda hanya dapat mengajukan checkout untuk booking sendiri.",
@@ -116,9 +141,11 @@ export async function requestWebsiteCheckout({
       );
     }
 
-    const actor = await tx.user.findUnique({ where: { id: userId }, select: { id: true } });
-    if (!actor) {
-      throw new CheckoutFlowError("USER_NOT_FOUND", "Akun user tidak ditemukan.", 404);
+    if (canClaimByGuestEmail) {
+      await tx.booking.update({
+        where: { id: booking.id },
+        data: { userId: actor.id },
+      });
     }
 
     const now = new Date();
@@ -225,10 +252,11 @@ export async function confirmReceptionCheckout({
         400,
       );
     }
-    if (dateKey(checkedOutAt) < dateKey(booking.checkIn)) {
+    const actualCheckIn = booking.checkedInAt ?? booking.checkIn;
+    if (dateKey(checkedOutAt) < dateKey(actualCheckIn)) {
       throw new CheckoutFlowError(
         "INVALID_CHECKOUT_TIME",
-        "Waktu checkout tidak boleh lebih awal dari tanggal check-in.",
+        "Waktu checkout tidak boleh lebih awal dari waktu check-in aktual.",
         400,
       );
     }
@@ -378,15 +406,8 @@ export function serializeCheckoutBooking(record: CheckoutBooking) {
 
 function isActiveStay(record: {
   status: string;
-  checkIn: Date;
-  checkOut: Date;
 }) {
-  const today = dateKey(new Date());
-  return (
-    record.status === "CHECKED_IN" &&
-    dateKey(record.checkIn) <= today &&
-    dateKey(record.checkOut) >= today
-  );
+  return record.status === "CHECKED_IN";
 }
 
 function dateKey(value: Date) {

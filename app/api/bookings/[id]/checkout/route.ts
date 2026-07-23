@@ -7,6 +7,7 @@ import {
 } from "@/lib/checkout-service";
 import { triggerCheckoutRequested } from "@/lib/notification-triggers";
 import { getDatabaseBookingRecord } from "@/lib/booking-database";
+import { prisma } from "@/lib/prisma";
 
 export async function GET(
   request: Request,
@@ -21,7 +22,17 @@ export async function GET(
   const userId = request.headers.get("x-user-id")?.trim();
   const role = request.headers.get("x-user-role")?.trim();
   const staff = ["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"].includes(role ?? "");
-  if (!staff && booking.guest.id !== userId) {
+  const user = !staff && userId
+    ? await prisma.user.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      })
+    : null;
+  const ownsBooking =
+    booking.guest.id === userId ||
+    (booking.guest.id === null &&
+      user?.email.toLowerCase() === booking.guest.email.toLowerCase());
+  if (!staff && !ownsBooking) {
     return NextResponse.json({ error: "FORBIDDEN", message: "Anda tidak memiliki akses ke checkout ini." }, { status: 403 });
   }
 

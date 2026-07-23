@@ -96,10 +96,24 @@ export async function persistBookingRecord(
       });
     }
 
-    const user = await tx.user.findUnique({
-      where: { email: record.guest.email.toLowerCase() },
-      select: { id: true },
-    });
+    let user = record.bookedBy?.userId
+      ? await tx.user.findUnique({
+          where: { id: record.bookedBy.userId },
+          select: { id: true },
+        })
+      : null;
+    if (!user && record.bookedBy?.email) {
+      user = await tx.user.findUnique({
+        where: { email: record.bookedBy.email.toLowerCase() },
+        select: { id: true },
+      });
+    }
+    if (!user) {
+      user = await tx.user.findUnique({
+        where: { email: record.guest.email.toLowerCase() },
+        select: { id: true },
+      });
+    }
     const existing = await tx.booking.findUnique({
       where: { bookingCode: record.bookingCode },
       select: { id: true },
