@@ -76,12 +76,23 @@ export async function POST(request: Request) {
   }
 
   const { email, password, rememberMe } = parsed.data;
-  const demoAuthEnabled =
-    process.env.NODE_ENV !== "production" ||
-    process.env.DEMO_AUTH_ENABLED === "true";
+  const demoAuthEnabled = process.env.DEMO_AUTH_ENABLED !== "false";
   const demoAccount = DEMO_ACCOUNTS.find(
     (account) => account.email.toLowerCase() === email,
   );
+
+  if (demoAuthEnabled && demoAccount) {
+    if (demoAccount.password !== password) return invalidCredentials();
+    return createLoginResponse(
+      {
+        id: demoAccount.id,
+        name: demoAccount.name,
+        email: demoAccount.email,
+        role: demoAccount.role,
+      },
+      rememberMe,
+    );
+  }
 
   try {
     const user = await prisma.user.findUnique({ where: { email } });
@@ -118,19 +129,6 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
-  }
-
-  if (demoAuthEnabled && demoAccount) {
-    if (demoAccount.password !== password) return invalidCredentials();
-    return createLoginResponse(
-      {
-        id: demoAccount.id,
-        name: demoAccount.name,
-        email: demoAccount.email,
-        role: demoAccount.role,
-      },
-      rememberMe,
-    );
   }
 
   const memoryUser = findMemoryAuthUser(email);

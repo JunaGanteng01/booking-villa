@@ -31,7 +31,7 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   define: {
     __dirname: JSON.stringify("/"),
     __filename: JSON.stringify("/index.js"),
@@ -39,9 +39,13 @@ export default defineConfig({
   plugins: [
     vinext(),
     sites(),
-    cloudflare({
-      viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-      config: localBindingConfig,
-    }),
+    ...(command === "build"
+      ? [
+          cloudflare({
+            viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+            config: localBindingConfig,
+          }),
+        ]
+      : []),
   ],
-});
+}));
