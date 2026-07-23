@@ -232,7 +232,7 @@ function summarize(
     ).size,
     conversion: percentage(
       bookings.filter((booking) =>
-        ["CONFIRMED", "COMPLETED"].includes(booking.status),
+        ["CONFIRMED", "CHECKED_IN", "COMPLETED"].includes(booking.status),
       ).length,
       Math.max(1, bookings.length),
     ),
@@ -303,7 +303,7 @@ function defaultGrouping(
 }
 
 function isOccupied(booking: AnalyticsBooking) {
-  return ["CONFIRMED", "COMPLETED"].includes(booking.status);
+  return ["CONFIRMED", "CHECKED_IN", "COMPLETED"].includes(booking.status);
 }
 
 function trend(current: number, previous: number) {

@@ -90,6 +90,7 @@ const statusMeta: Record<string, { label: string; color: string }> = {
   PENDING: { label: "Menunggu", color: "bg-amber-300" },
   WAITING_PAYMENT: { label: "Menunggu bayar", color: "bg-amber-300" },
   CONFIRMED: { label: "Dikonfirmasi", color: "bg-emerald-400" },
+  CHECKED_IN: { label: "Check-in", color: "bg-cyan-300" },
   COMPLETED: { label: "Selesai", color: "bg-sky-300" },
   CANCELLED: { label: "Dibatalkan", color: "bg-rose-300" },
   EXPIRED: { label: "Kedaluwarsa", color: "bg-orange-300" },

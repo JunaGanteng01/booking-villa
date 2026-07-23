@@ -23,6 +23,7 @@ export type BookingStoreRecord = {
     | "PENDING"
     | "WAITING_PAYMENT"
     | "CONFIRMED"
+    | "CHECKED_IN"
     | "CANCELLED"
     | "COMPLETED"
     | "EXPIRED"
@@ -164,7 +165,9 @@ export function updateBookingStatus({
     ...booking,
     status,
     expiresAt:
-      status === "CONFIRMED" || status === "CANCELLED" ? "" : booking.expiresAt,
+      status === "CONFIRMED" || status === "CHECKED_IN" || status === "CANCELLED"
+        ? ""
+        : booking.expiresAt,
     availabilityLocks: availabilityStatus
       ? booking.availabilityLocks.map((lock) => ({
           ...lock,
@@ -226,7 +229,8 @@ function createBookingCode() {
 function statusToAvailability(
   status: BookingStoreRecord["status"],
 ): CalendarStatus | null {
-  if (status === "CONFIRMED" || status === "COMPLETED") return "BOOKED";
+  if (status === "CONFIRMED" || status === "CHECKED_IN" || status === "COMPLETED")
+    return "BOOKED";
   if (status === "PENDING" || status === "WAITING_PAYMENT") return "PENDING";
   if (status === "CANCELLED" || status === "EXPIRED" || status === "REFUNDED") {
     return "AVAILABLE";

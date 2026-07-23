@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { updateAdminUserStatus } from "@/lib/admin-user-store";
+import {
+  listAdminUserRecords,
+  updateAdminUserStatus,
+} from "@/lib/admin-user-store";
 import { prisma } from "@/lib/prisma";
 import { isPrismaDatabaseUnavailableError } from "@/lib/prisma-errors";
 
@@ -15,7 +18,7 @@ export async function PATCH(
 ) {
   const actorRole = request.headers.get("x-user-role") ?? "";
   const actorId = request.headers.get("x-user-id") ?? "";
-  if (!["SUPER_ADMIN", "ADMIN"].includes(actorRole))
+  if (!["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"].includes(actorRole))
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   let body: unknown;
   try {
@@ -49,6 +52,9 @@ export async function PATCH(
   try {
     const current = await prisma.user.findUnique({ where: { id } });
     if (!current) return notFound();
+    if (actorRole === "RECEPTIONIST" && current.role !== "CUSTOMER") {
+      return receptionistScopeError();
+    }
     if (current.role === "SUPER_ADMIN" && parsed.data.status !== "ACTIVE") {
       const active = await prisma.user.count({
         where: { role: "SUPER_ADMIN", status: "ACTIVE" },
@@ -95,6 +101,13 @@ export async function PATCH(
         { status: 500 },
       );
     }
+    const fallbackCurrent = listAdminUserRecords().find((user) => user.id === id);
+    if (
+      actorRole === "RECEPTIONIST" &&
+      fallbackCurrent?.role !== "CUSTOMER"
+    ) {
+      return receptionistScopeError();
+    }
     const user = updateAdminUserStatus(
       id,
       parsed.data.status,
@@ -108,6 +121,13 @@ export async function PATCH(
         })
       : notFound();
   }
+}
+
+function receptionistScopeError() {
+  return NextResponse.json(
+    { message: "Receptionist hanya dapat mengatur akun Customer." },
+    { status: 403 },
+  );
 }
 function notFound() {
   return NextResponse.json(

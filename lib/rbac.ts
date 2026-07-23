@@ -47,6 +47,7 @@ const permissionsByRole: Record<UserRole, PermissionKey[]> = {
     "checkouts.manage",
     "villas.view",
     "customers.view",
+    "users.manage",
   ],
   FINANCE: [
     "dashboard.view",

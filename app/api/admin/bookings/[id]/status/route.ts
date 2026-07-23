@@ -14,6 +14,7 @@ const bookingStatuses = [
   "PENDING",
   "WAITING_PAYMENT",
   "CONFIRMED",
+  "CHECKED_IN",
   "CANCELLED",
   "COMPLETED",
   "EXPIRED",
@@ -30,7 +31,8 @@ const allowedTransitions: Record<BookingStatus, BookingStatus[]> = {
   DRAFT: ["PENDING", "CANCELLED"],
   PENDING: ["WAITING_PAYMENT", "CONFIRMED", "CANCELLED", "EXPIRED"],
   WAITING_PAYMENT: ["CONFIRMED", "CANCELLED", "EXPIRED"],
-  CONFIRMED: ["COMPLETED", "CANCELLED"],
+  CONFIRMED: ["CHECKED_IN", "CANCELLED"],
+  CHECKED_IN: ["COMPLETED"],
   CANCELLED: [],
   COMPLETED: [],
   EXPIRED: [],
@@ -98,6 +100,16 @@ export async function PATCH(
         parsed.data.status,
       );
       if (transitionError) return { transitionError, current } as const;
+      if (
+        parsed.data.status === "CHECKED_IN" &&
+        (current.paymentStatus !== "PAID" || current.remainingAmount > 0)
+      ) {
+        return {
+          transitionError:
+            "Check-in hanya dapat dilakukan setelah seluruh tagihan lunas.",
+          current,
+        } as const;
+      }
 
       const actor = actorId
         ? await tx.user.findUnique({
@@ -112,6 +124,9 @@ export async function PATCH(
           status: parsed.data.status,
           ...(parsed.data.status === "CONFIRMED"
             ? { confirmedAt: now, expiresAt: null }
+            : {}),
+          ...(parsed.data.status === "CHECKED_IN"
+            ? { checkedInAt: now, expiresAt: null }
             : {}),
           ...(parsed.data.status === "CANCELLED"
             ? { cancelledAt: now, expiresAt: null }
@@ -164,6 +179,17 @@ export async function PATCH(
 
     const current = findBookingRecord(id);
     if (!current) return bookingNotFound();
+    if (
+      parsed.data.status === "CHECKED_IN" &&
+      (current.paymentStatus !== "PAID" ||
+        current.amounts.remainingAmount > 0)
+    ) {
+      return invalidTransition(
+        current.status,
+        parsed.data.status,
+        "Check-in hanya dapat dilakukan setelah seluruh tagihan lunas.",
+      );
+    }
     const transitionError = validateTransition(
       current.status,
       parsed.data.status,
@@ -209,7 +235,7 @@ async function updateDatabaseAvailability(
   status: BookingStatus,
   now: Date,
 ) {
-  if (status === "CONFIRMED") {
+  if (status === "CONFIRMED" || status === "CHECKED_IN") {
     await tx.villaAvailability.updateMany({
       where: { bookingId },
       data: { status: "BOOKED", bookedAt: now, holdExpiresAt: null },

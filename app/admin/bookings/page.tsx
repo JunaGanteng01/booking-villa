@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   BarChart3,
   Bell,
+  BadgeCheck,
   Building2,
   CalendarCheck2,
   CalendarDays,
@@ -11,10 +12,12 @@ import {
   ChevronDown,
   CircleDollarSign,
   Clock3,
+  CreditCard,
   Download,
   DoorOpen,
   Eye,
   LayoutDashboard,
+  Loader2,
   LogOut,
   Menu,
   MessageSquareText,
@@ -30,7 +33,7 @@ import {
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { AdminFilterBar } from "@/components/admin-filter-bar";
 import { useAppNotifications } from "@/components/notification-root";
 import { useAdminNotificationCount } from "@/components/use-admin-notification-count";
@@ -53,6 +56,8 @@ type BookingItem = {
   code: string;
   guest: string;
   email: string;
+  phone?: string;
+  specialRequest?: string | null;
   initials: string;
   villa: string;
   image: string;
@@ -63,6 +68,8 @@ type BookingItem = {
   nights: number;
   guests: number;
   total: number;
+  paid?: number;
+  remaining?: number;
   status: BookingStatus;
   payment: PaymentStatus;
   createdAt: string;
@@ -379,10 +386,30 @@ export default function AdminBookingListPage() {
     window.history.replaceState({}, "", url);
   };
 
-  const updateReviewedBooking = (
+  const updateReviewedBooking = async (
     item: BookingItem,
     nextStatus: BookingStatus,
   ) => {
+    const response = await fetch(
+      `/api/admin/bookings/${encodeURIComponent(item.id)}/status`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: nextStatus,
+          reason:
+            nextStatus === "CANCELLED"
+              ? "Dibatalkan oleh tim operasional dari halaman booking."
+              : null,
+        }),
+      },
+    );
+    const payload = (await response.json().catch(() => null)) as
+      | { message?: string }
+      | null;
+    if (!response.ok) {
+      throw new Error(payload?.message || "Status booking belum dapat diperbarui.");
+    }
     const updated = { ...item, status: nextStatus };
     setBookingItems((current) =>
       current.map((booking) => (booking.id === item.id ? updated : booking)),
@@ -391,6 +418,25 @@ export default function AdminBookingListPage() {
     notify({
       title: "Tinjauan booking disimpan",
       description: `${item.code} diperbarui menjadi ${statusMeta[nextStatus].label}.`,
+      variant: "success",
+    });
+  };
+
+  const handleCheckInComplete = (item: BookingItem) => {
+    const updated: BookingItem = {
+      ...item,
+      status: "CHECKED_IN",
+      payment: "PAID",
+      paid: item.total,
+      remaining: 0,
+    };
+    setBookingItems((current) =>
+      current.map((booking) => (booking.id === item.id ? updated : booking)),
+    );
+    setSelectedBooking(updated);
+    notify({
+      title: "Tamu berhasil check-in",
+      description: `${item.code} sudah lunas dan status menginap telah aktif.`,
       variant: "success",
     });
   };
@@ -726,6 +772,12 @@ export default function AdminBookingListPage() {
               updateReviewedBooking(selectedBooking, nextStatus)
             }
             canReview={canAccess("/admin/bookings", "PATCH")}
+            canCheckIn={[
+              "SUPER_ADMIN",
+              "ADMIN",
+              "RECEPTIONIST",
+            ].includes(profile.role)}
+            onCheckInComplete={() => handleCheckInComplete(selectedBooking)}
           />
         ) : null}
       </AnimatePresence>
@@ -901,20 +953,45 @@ function BookingDetailModal({
   onExport,
   onStatusChange,
   canReview,
+  canCheckIn,
+  onCheckInComplete,
 }: {
   item: BookingItem;
   reduceMotion: boolean;
   onClose: () => void;
   onExport: () => void;
-  onStatusChange: (status: BookingStatus) => void;
+  onStatusChange: (status: BookingStatus) => Promise<void>;
   canReview: boolean;
+  canCheckIn: boolean;
+  onCheckInComplete: () => void;
 }) {
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState<BookingStatus | null>(null);
+  const [reviewError, setReviewError] = useState("");
   const status = statusMeta[item.status];
   const StatusIcon = status.icon;
   const subtotal = Math.round(item.total / 1.11);
   const tax = item.total - subtotal;
   const reviewActions = getBookingReviewActions(item.status);
+  const paid = getPaidAmount(item);
+  const remaining = getRemainingAmount(item);
+
+  const handleReview = async (nextStatus: BookingStatus) => {
+    setReviewError("");
+    setReviewBusy(nextStatus);
+    try {
+      await onStatusChange(nextStatus);
+      setReviewOpen(false);
+    } catch (error) {
+      setReviewError(
+        error instanceof Error
+          ? error.message
+          : "Status booking belum dapat diperbarui.",
+      );
+    } finally {
+      setReviewBusy(null);
+    }
+  };
   return (
     <motion.div
       className="fixed inset-0 z-[70] flex items-end justify-center bg-emerald-950/60 p-0 backdrop-blur-lg sm:items-center sm:p-4"
@@ -996,8 +1073,8 @@ function BookingDetailModal({
                 Catatan tamu
               </p>
               <p className="mt-2 text-sm leading-6 text-emerald-950/55 dark:text-white/52">
-                Mohon siapkan airport transfer dan early check-in bila villa
-                sudah siap. Tamu merayakan perjalanan keluarga.
+                {item.specialRequest ||
+                  "Tidak ada permintaan khusus dari tamu."}
               </p>
             </div>
           </div>
@@ -1014,7 +1091,7 @@ function BookingDetailModal({
                 <div>
                   <p className="font-semibold">{item.guest}</p>
                   <p className="mt-1 text-xs text-white/48">
-                    Tamu terverifikasi
+                    Verifikasi identitas saat kedatangan
                   </p>
                 </div>
               </div>
@@ -1025,7 +1102,9 @@ function BookingDetailModal({
                 </p>
                 <p className="flex items-center justify-between">
                   <span className="text-white/45">Telepon</span>
-                  <span className="font-semibold">+62 812 3456 7890</span>
+                  <span className="font-semibold">
+                    {item.phone || "Belum tersedia"}
+                  </span>
                 </p>
               </div>
             </div>
@@ -1037,14 +1116,46 @@ function BookingDetailModal({
                 <PriceRow label={`${item.nights} malam`} value={subtotal} />
                 <PriceRow label="Pajak & layanan" value={tax} />
                 <div className="border-t border-emerald-950/8 pt-3 dark:border-white/8">
-                  <PriceRow
+                 <PriceRow
                     label="Total pembayaran"
                     value={item.total}
                     strong
                   />
+                  <div className="mt-3 space-y-3 border-t border-emerald-950/8 pt-3 dark:border-white/8">
+                    <PriceRow label="Sudah dibayar" value={paid} />
+                    <PriceRow
+                      label="Sisa pelunasan"
+                      value={remaining}
+                      strong={remaining > 0}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
+            {canCheckIn && item.status === "CONFIRMED" ? (
+              <ReceptionCheckInPanel
+                item={item}
+                remaining={remaining}
+                onComplete={onCheckInComplete}
+              />
+            ) : null}
+            {item.status === "CHECKED_IN" ? (
+              <div
+                role="status"
+                className="rounded-2xl border border-emerald-500/18 bg-emerald-500/8 p-4 text-emerald-800 dark:text-emerald-200"
+              >
+                <div className="flex items-start gap-3">
+                  <BadgeCheck className="mt-0.5 size-5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold">Tamu sudah check-in</p>
+                    <p className="mt-1 text-xs leading-5 opacity-65">
+                      Verifikasi kedatangan selesai dan seluruh tagihan telah
+                      tercatat lunas.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <p className="text-xs leading-5 text-emerald-950/42 dark:text-white/40">
               Booking dibuat {item.createdAt}. Perubahan status dan tindakan
               operasional tersedia pada tahap kontrol booking berikutnya.
@@ -1068,6 +1179,11 @@ function BookingDetailModal({
                     <p className="mt-1 text-xs leading-5 text-emerald-950/50 dark:text-white/48">
                       Pilih tindak lanjut untuk booking {item.code}.
                     </p>
+                    {reviewError ? (
+                      <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-200">
+                        {reviewError}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {reviewActions.length ? (
@@ -1075,14 +1191,18 @@ function BookingDetailModal({
                         <button
                           key={action.status}
                           type="button"
-                          onClick={() => onStatusChange(action.status)}
+                          onClick={() => void handleReview(action.status)}
+                          disabled={reviewBusy !== null}
                           className={cn(
-                            "min-h-9 rounded-full px-4 text-xs font-bold transition hover:-translate-y-0.5",
+                            "inline-flex min-h-9 items-center gap-2 rounded-full px-4 text-xs font-bold transition hover:-translate-y-0.5 disabled:opacity-55",
                             action.status === "CANCELLED"
                               ? "bg-rose-100 text-rose-700 dark:bg-rose-300/10 dark:text-rose-200"
                               : "bg-emerald-700 text-white",
                           )}
                         >
+                          {reviewBusy === action.status ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : null}
                           {action.label}
                         </button>
                       ))
@@ -1128,6 +1248,206 @@ function BookingDetailModal({
   );
 }
 
+function ReceptionCheckInPanel({
+  item,
+  remaining,
+  onComplete,
+}: {
+  item: BookingItem;
+  remaining: number;
+  onComplete: () => void;
+}) {
+  const [guestVerified, setGuestVerified] = useState(false);
+  const [identityLast4, setIdentityLast4] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "CASH" | "BANK_TRANSFER" | "QRIS" | "E_WALLET"
+  >("CASH");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError("");
+    if (!guestVerified) {
+      setError("Konfirmasi identitas tamu sebelum melanjutkan check-in.");
+      return;
+    }
+    if (identityLast4 && !/^[A-Za-z0-9]{4}$/.test(identityLast4)) {
+      setError("Empat karakter identitas harus terdiri dari huruf atau angka.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await fetch(
+        `/api/admin/bookings/${encodeURIComponent(item.id)}/check-in`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            guestVerified: true,
+            amountReceived: remaining,
+            paymentMethod: remaining > 0 ? paymentMethod : null,
+            paymentReference: paymentReference.trim() || null,
+            identityLast4: identityLast4.trim() || null,
+            notes: notes.trim() || null,
+          }),
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(payload?.message || "Check-in belum dapat diproses.");
+      }
+      onComplete();
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : "Check-in belum dapat diproses.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={submit}
+      className="rounded-2xl border border-amber-400/25 bg-amber-50/70 p-5 dark:border-amber-200/12 dark:bg-amber-200/[0.045]"
+    >
+      <div className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-300/22 text-amber-800 dark:text-amber-200">
+          <DoorOpen className="size-5" />
+        </span>
+        <div>
+          <p className="text-[0.62rem] font-bold uppercase tracking-[0.15em] text-amber-800 dark:text-amber-200">
+            Kontrol kedatangan
+          </p>
+          <h3 className="mt-1 font-serif text-xl font-semibold">
+            Pelunasan & check-in
+          </h3>
+          <p className="mt-1 text-xs leading-5 opacity-50">
+            Verifikasi tamu dan catat sisa pembayaran dalam satu proses.
+          </p>
+        </div>
+      </div>
+
+      <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-950/8 bg-white/55 p-3 text-xs leading-5 dark:border-white/8 dark:bg-white/[0.035]">
+        <input
+          type="checkbox"
+          checked={guestVerified}
+          onChange={(event) => setGuestVerified(event.target.checked)}
+          className="mt-0.5 size-4 accent-emerald-700"
+        />
+        <span>
+          <strong className="block">Identitas tamu sudah diverifikasi</strong>
+          <span className="opacity-48">
+            Nama dan data kedatangan sesuai dengan booking.
+          </span>
+        </span>
+      </label>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1.5 text-[0.65rem] font-bold">
+          4 karakter terakhir identitas
+          <input
+            value={identityLast4}
+            maxLength={4}
+            onChange={(event) =>
+              setIdentityLast4(
+                event.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase(),
+              )
+            }
+            placeholder="Contoh: 4281"
+            className="h-11 rounded-xl border border-emerald-950/10 bg-white/70 px-3 text-sm font-normal uppercase outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-white/5"
+          />
+        </label>
+        <label className="grid gap-1.5 text-[0.65rem] font-bold">
+          Sisa yang diterima
+          <span className="flex h-11 items-center rounded-xl border border-emerald-950/8 bg-emerald-950/[0.035] px-3 text-sm font-bold text-emerald-700 dark:border-white/8 dark:bg-white/[0.035] dark:text-emerald-300">
+            {money.format(remaining)}
+          </span>
+        </label>
+        {remaining > 0 ? (
+          <>
+            <label className="grid gap-1.5 text-[0.65rem] font-bold">
+              Metode pelunasan
+              <select
+                value={paymentMethod}
+                onChange={(event) =>
+                  setPaymentMethod(
+                    event.target.value as typeof paymentMethod,
+                  )
+                }
+                className="h-11 rounded-xl border border-emerald-950/10 bg-white/70 px-3 text-sm font-normal outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-[#10231d]"
+              >
+                <option value="CASH">Tunai</option>
+                <option value="BANK_TRANSFER">Transfer Bank</option>
+                <option value="QRIS">QRIS</option>
+                <option value="E_WALLET">E-Wallet</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5 text-[0.65rem] font-bold">
+              Referensi pembayaran
+              <input
+                value={paymentReference}
+                onChange={(event) => setPaymentReference(event.target.value)}
+                placeholder="Opsional"
+                className="h-11 rounded-xl border border-emerald-950/10 bg-white/70 px-3 text-sm font-normal outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-white/5"
+              />
+            </label>
+          </>
+        ) : (
+          <div className="flex items-center gap-2 rounded-xl bg-emerald-500/9 px-3 py-2.5 text-xs font-semibold text-emerald-800 sm:col-span-2 dark:text-emerald-200">
+            <CreditCard className="size-4" />
+            Booking sudah lunas, tidak ada pembayaran tambahan.
+          </div>
+        )}
+        <label className="grid gap-1.5 text-[0.65rem] font-bold sm:col-span-2">
+          Catatan reception
+          <textarea
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            rows={2}
+            placeholder="Opsional, misalnya nomor kamar atau informasi serah terima"
+            className="rounded-xl border border-emerald-950/10 bg-white/70 px-3 py-2.5 text-sm font-normal outline-none focus:border-emerald-600/45 dark:border-white/10 dark:bg-white/5"
+          />
+        </label>
+      </div>
+
+      {error ? (
+        <p
+          role="alert"
+          className="mt-3 rounded-xl border border-rose-500/15 bg-rose-500/8 p-3 text-xs font-semibold text-rose-700 dark:text-rose-200"
+        >
+          {error}
+        </p>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={saving}
+        className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-emerald-700 px-5 text-sm font-bold text-white shadow-[0_12px_28px_rgba(4,120,87,0.2)] disabled:opacity-55"
+      >
+        {saving ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <DoorOpen className="size-4" />
+        )}
+        {saving
+          ? "Memproses check-in..."
+          : remaining > 0
+            ? "Catat pelunasan & Check-in"
+            : "Check-in tamu"}
+      </button>
+    </form>
+  );
+}
+
 function getBookingReviewActions(status: BookingStatus) {
   const actions: Partial<
     Record<BookingStatus, Array<{ label: string; status: BookingStatus }>>
@@ -1136,13 +1456,23 @@ function getBookingReviewActions(status: BookingStatus) {
       { label: "Konfirmasi booking", status: "CONFIRMED" },
       { label: "Batalkan", status: "CANCELLED" },
     ],
-    CONFIRMED: [
-      { label: "Tandai check-in", status: "CHECKED_IN" },
-      { label: "Batalkan", status: "CANCELLED" },
-    ],
-    CHECKED_IN: [{ label: "Selesaikan booking", status: "COMPLETED" }],
+    CONFIRMED: [{ label: "Batalkan", status: "CANCELLED" }],
   };
   return actions[status] ?? [];
+}
+
+function getRemainingAmount(item: BookingItem) {
+  if (typeof item.remaining === "number") return Math.max(item.remaining, 0);
+  if (item.payment === "PAID") return 0;
+  if (item.payment === "PARTIALLY_PAID") {
+    return Math.max(item.total - Math.round(item.total * 0.3), 0);
+  }
+  return item.total;
+}
+
+function getPaidAmount(item: BookingItem) {
+  if (typeof item.paid === "number") return Math.max(item.paid, 0);
+  return Math.max(item.total - getRemainingAmount(item), 0);
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
@@ -1206,7 +1536,7 @@ function toInvoiceBooking(item: BookingItem): BookingStoreRecord {
     bookingCode: item.code,
     villaId: item.villa.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
     villaName: item.villa,
-    status: item.status === "CHECKED_IN" ? "CONFIRMED" : item.status,
+    status: item.status,
     paymentStatus: item.payment === "PENDING" ? "UNPAID" : item.payment,
     checkIn: formatIsoDate(checkInDate),
     checkOut: formatIsoDate(checkOutDate),
@@ -1215,10 +1545,9 @@ function toInvoiceBooking(item: BookingItem): BookingStoreRecord {
     guest: {
       name: item.guest,
       email: item.email,
-      phone: "+62 812 3456 7890",
+      phone: item.phone || "-",
     },
-    specialRequest:
-      "Mohon siapkan airport transfer dan early check-in bila tersedia.",
+    specialRequest: item.specialRequest || null,
     coupon: { code: null, status: "NOT_APPLIED", amount: 0 },
     addOns: [],
     lineItems: [
@@ -1244,13 +1573,8 @@ function toInvoiceBooking(item: BookingItem): BookingStoreRecord {
       serviceFee: 0,
       taxTotal,
       totalAmount: item.total,
-      depositAmount: item.total,
-      remainingAmount:
-        item.payment === "PAID"
-          ? 0
-          : item.payment === "PARTIALLY_PAID"
-            ? Math.max(item.total - Math.round(item.total * 0.3), 0)
-            : item.total,
+      depositAmount: getPaidAmount(item),
+      remainingAmount: getRemainingAmount(item),
       currency: "IDR",
     },
     expiresAt: now,
@@ -1266,6 +1590,8 @@ function toBookingItem(booking: BookingStoreRecord): BookingItem {
     code: booking.bookingCode,
     guest: booking.bookedBy?.name || booking.guest.name,
     email: booking.bookedBy?.email || booking.guest.email,
+    phone: booking.guest.phone,
+    specialRequest: booking.specialRequest,
     initials: getInitials(booking.bookedBy?.name || booking.guest.name),
     villa: booking.villaName,
     image:
@@ -1278,6 +1604,11 @@ function toBookingItem(booking: BookingStoreRecord): BookingItem {
     nights: booking.nights,
     guests: booking.guests,
     total: booking.amounts.totalAmount,
+    paid: Math.max(
+      booking.amounts.totalAmount - booking.amounts.remainingAmount,
+      0,
+    ),
+    remaining: booking.amounts.remainingAmount,
     status: bookingStatusForAdmin(booking.status),
     payment: paymentStatusForAdmin(booking.paymentStatus),
     createdAt: formatBookingTimestamp(booking.createdAt),
@@ -1286,6 +1617,7 @@ function toBookingItem(booking: BookingStoreRecord): BookingItem {
 
 function bookingStatusForAdmin(status: BookingStoreRecord["status"]): BookingStatus {
   if (status === "CONFIRMED") return "CONFIRMED";
+  if (status === "CHECKED_IN") return "CHECKED_IN";
   if (status === "COMPLETED") return "COMPLETED";
   if (status === "CANCELLED" || status === "EXPIRED" || status === "REFUNDED") return "CANCELLED";
   return "PENDING";

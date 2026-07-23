@@ -43,7 +43,8 @@ const createSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  if (!isAdmin(request))
+  const actorRole = request.headers.get("x-user-role") ?? "";
+  if (!canManageUsers(actorRole))
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   const parsed = querySchema.safeParse(
     Object.fromEntries(new URL(request.url).searchParams.entries()),
@@ -57,8 +58,9 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   const input = parsed.data;
+  const receptionistScope = actorRole === "RECEPTIONIST";
   const where: Prisma.UserWhereInput = {
-    role: input.role,
+    role: receptionistScope ? "CUSTOMER" : input.role,
     status: input.status,
     department: input.department
       ? { equals: input.department, mode: "insensitive" }
@@ -127,7 +129,8 @@ export async function GET(request: Request) {
   const search = input.search?.toLowerCase();
   const filtered = listAdminUserRecords().filter(
     (user) =>
-      (!input.role || user.role === input.role) &&
+      (!receptionistScope || user.role === "CUSTOMER") &&
+      (!input.role || receptionistScope || user.role === input.role) &&
       (!input.status || user.status === input.status) &&
       (!input.department ||
         user.department?.toLowerCase() === input.department.toLowerCase()) &&
@@ -144,7 +147,7 @@ export async function GET(request: Request) {
         : b.createdAt.localeCompare(a.createdAt),
   );
   const start = (input.page - 1) * input.limit;
-  const grouped = listAdminUserRecords().map((user) => ({
+  const grouped = filtered.map((user) => ({
     status: user.status,
     _count: { _all: 1 },
   }));
@@ -160,7 +163,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const actorRole = request.headers.get("x-user-role") ?? "";
-  if (!["SUPER_ADMIN", "ADMIN"].includes(actorRole)) {
+  if (!canManageUsers(actorRole)) {
     return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   }
   let body: unknown;
@@ -185,6 +188,12 @@ export async function POST(request: Request) {
   if (parsed.data.role === "SUPER_ADMIN" && actorRole !== "SUPER_ADMIN") {
     return NextResponse.json(
       { message: "Hanya Super Admin yang dapat menambah Super Admin." },
+      { status: 403 },
+    );
+  }
+  if (actorRole === "RECEPTIONIST" && parsed.data.role !== "CUSTOMER") {
+    return NextResponse.json(
+      { message: "Receptionist hanya dapat menambahkan akun Customer." },
       { status: 403 },
     );
   }
@@ -277,10 +286,8 @@ function response(
     meta: { source },
   });
 }
-function isAdmin(request: Request) {
-  return ["SUPER_ADMIN", "ADMIN"].includes(
-    request.headers.get("x-user-role") ?? "",
-  );
+function canManageUsers(role: string) {
+  return ["SUPER_ADMIN", "ADMIN", "RECEPTIONIST"].includes(role);
 }
 
 function emailConflict() {

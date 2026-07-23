@@ -17,6 +17,7 @@ const querySchema = z
         "PENDING",
         "WAITING_PAYMENT",
         "CONFIRMED",
+        "CHECKED_IN",
         "CANCELLED",
         "COMPLETED",
         "EXPIRED",
@@ -240,7 +241,7 @@ function isRevenue(booking: ReportBooking) {
 }
 
 function isOccupied(booking: ReportBooking) {
-  return ["CONFIRMED", "COMPLETED"].includes(booking.status);
+  return ["CONFIRMED", "CHECKED_IN", "COMPLETED"].includes(booking.status);
 }
 
 function resolveRange(from?: Date, to?: Date) {

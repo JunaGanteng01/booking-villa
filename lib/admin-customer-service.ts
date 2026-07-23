@@ -25,7 +25,7 @@ export type AdminCustomerResult = {
 
 type CustomerAccumulator = Omit<AdminCustomer, "tier">;
 
-const STAY_STATUSES: BookingStatus[] = ["CONFIRMED", "COMPLETED"];
+const STAY_STATUSES: BookingStatus[] = ["CONFIRMED", "CHECKED_IN", "COMPLETED"];
 
 export async function listAdminCustomers(): Promise<AdminCustomerResult> {
   const [users, bookings] = await prisma.$transaction([

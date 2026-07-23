@@ -147,7 +147,7 @@ type NewUserInput = {
   name: string;
   email: string;
   phone: string | null;
-  role: "ADMIN" | "RECEPTIONIST" | "FINANCE" | "MARKETING";
+  role: "ADMIN" | "RECEPTIONIST" | "FINANCE" | "MARKETING" | "CUSTOMER";
   department: string;
 };
 
@@ -165,14 +165,19 @@ type ApiAdminUser = {
 export default function UsersPage() {
   const reduceMotion = useReducedMotion();
   const { notify } = useAppNotifications();
-  const { canAccess } = useAdminSession();
+  const { canAccess, profile } = useAdminSession();
   const [users, setUsers] = useState(initialUsers);
   const [query, setQuery] = useState("");
   const [role, setRole] = useState("ALL");
   const [status, setStatus] = useState("ALL");
   const [addOpen, setAddOpen] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState<string | number | null>(
+    null,
+  );
+  const isReceptionist = profile.role === "RECEPTIONIST";
 
   useEffect(() => {
+    if (!profile.role) return;
     const controller = new AbortController();
 
     void fetch("/api/admin/users?limit=100&sort=newest", {
@@ -195,7 +200,7 @@ export default function UsersPage() {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [profile.role]);
 
   const addUser = async (input: NewUserInput) => {
     const response = await fetch("/api/admin/users", {
@@ -235,10 +240,70 @@ export default function UsersPage() {
     });
   };
 
+  const toggleUserStatus = async (user: AdminUser) => {
+    if (updatingUserId !== null) return;
+    const nextStatus = user.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+    setUpdatingUserId(user.id);
+    try {
+      const response = await fetch(
+        `/api/admin/users/${encodeURIComponent(String(user.id))}/status`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: nextStatus,
+            reason:
+              nextStatus === "ACTIVE"
+                ? null
+                : "Dinonaktifkan oleh tim Reception dari daftar pengguna.",
+          }),
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as
+        | { message?: string }
+        | null;
+      if (!response.ok) {
+        throw new Error(payload?.message || "Status akun belum dapat diperbarui.");
+      }
+      setUsers((current) =>
+        current.map((item) =>
+          item.id === user.id
+            ? {
+                ...item,
+                status: nextStatus,
+                lastActive:
+                  nextStatus === "ACTIVE"
+                    ? "Baru saja diaktifkan"
+                    : "Akun tidak aktif",
+              }
+            : item,
+        ),
+      );
+      notify({
+        title:
+          nextStatus === "ACTIVE"
+            ? "Akun customer diaktifkan"
+            : "Akun customer ditangguhkan",
+        description: user.name,
+        variant: "success",
+      });
+    } catch (error) {
+      notify({
+        title: "Status akun gagal diperbarui",
+        description:
+          error instanceof Error ? error.message : "Silakan coba kembali.",
+        variant: "error",
+      });
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
   const visible = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return users.filter(
       (user) =>
+        (!isReceptionist || user.role === "Customer") &&
         (!normalized ||
           `${user.name} ${user.email} ${user.department}`
             .toLowerCase()
@@ -246,12 +311,23 @@ export default function UsersPage() {
         (role === "ALL" || user.role === role) &&
         (status === "ALL" || user.status === status),
     );
-  }, [query, role, status]);
+  }, [isReceptionist, query, role, status, users]);
+  const scopedUsers = useMemo(
+    () =>
+      isReceptionist
+        ? users.filter((user) => user.role === "Customer")
+        : users,
+    [isReceptionist, users],
+  );
 
   return (
     <AdminPageShell
       title="Pengguna"
-      subtitle="Kelola tim operasional dan hak akses admin"
+      subtitle={
+        isReceptionist
+          ? "Kelola akun customer untuk kebutuhan kedatangan tamu"
+          : "Kelola tim operasional dan hak akses admin"
+      }
       active="Pengguna"
     >
       <div className="mx-auto max-w-[1440px] px-4 pb-16 pt-8 sm:px-6 lg:px-8 lg:pt-10">
@@ -261,14 +337,16 @@ export default function UsersPage() {
             animate={{ opacity: 1, y: 0 }}
           >
             <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-[0.18em] text-emerald-700 dark:bg-emerald-300/10 dark:text-emerald-200">
-              <ShieldCheck className="size-3.5" /> Access control
+              <ShieldCheck className="size-3.5" />{" "}
+              {isReceptionist ? "Guest account control" : "Access control"}
             </span>
             <h1 className="mt-4 font-serif text-4xl font-semibold tracking-[-0.035em] sm:text-5xl">
-              Tim Villaku
+              {isReceptionist ? "Akun Customer" : "Tim Villaku"}
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 opacity-48">
-              Pantau anggota tim, peran, status akun, dan aktivitas terakhir
-              dari satu halaman.
+              {isReceptionist
+                ? "Aktifkan, tangguhkan, atau tambahkan akun customer untuk memastikan proses check-in berjalan lancar."
+                : "Pantau anggota tim, peran, status akun, dan aktivitas terakhir dari satu halaman."}
             </p>
           </motion.div>
           <div className="flex flex-wrap gap-2">
@@ -285,7 +363,8 @@ export default function UsersPage() {
               onClick={() => setAddOpen(true)}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-emerald-700 px-5 text-sm font-bold text-white"
             >
-              <Plus className="size-4" /> Tambah pengguna
+              <Plus className="size-4" />{" "}
+              {isReceptionist ? "Tambah customer" : "Tambah pengguna"}
             </button>
           </div>
         </div>
@@ -295,14 +374,14 @@ export default function UsersPage() {
           metrics={[
             {
               label: "Total pengguna",
-              value: String(users.length),
+              value: String(scopedUsers.length),
               icon: Users,
               tone: "emerald",
             },
             {
               label: "Akun aktif",
               value: String(
-                users.filter((item) => item.status === "ACTIVE").length,
+                scopedUsers.filter((item) => item.status === "ACTIVE").length,
               ),
               icon: UserRoundCheck,
               tone: "sky",
@@ -310,7 +389,7 @@ export default function UsersPage() {
             {
               label: "Menunggu undangan",
               value: String(
-                users.filter((item) => item.status === "INVITED").length,
+                scopedUsers.filter((item) => item.status === "INVITED").length,
               ),
               icon: Clock3,
               tone: "amber",
@@ -318,7 +397,7 @@ export default function UsersPage() {
             {
               label: "Ditangguhkan",
               value: String(
-                users.filter((item) => item.status === "SUSPENDED").length,
+                scopedUsers.filter((item) => item.status === "SUSPENDED").length,
               ),
               icon: UserRoundX,
               tone: "rose",
@@ -331,7 +410,7 @@ export default function UsersPage() {
             query={query}
             role={role}
             status={status}
-            roles={Array.from(new Set(users.map((item) => item.role)))}
+            roles={Array.from(new Set(scopedUsers.map((item) => item.role)))}
             statuses={Object.entries(statusMeta).map(([value, meta]) => ({
               value,
               label: meta.label,
@@ -365,6 +444,14 @@ export default function UsersPage() {
                     user={user}
                     index={index}
                     reduceMotion={Boolean(reduceMotion)}
+                    canManageStatus={
+                      isReceptionist
+                        ? user.role === "Customer"
+                        : ["SUPER_ADMIN", "ADMIN"].includes(profile.role)
+                    }
+                    updating={updatingUserId === user.id}
+                    onToggleStatus={() => void toggleUserStatus(user)}
+                    allowDetail={!isReceptionist}
                   />
                 ))}
               </tbody>
@@ -372,7 +459,18 @@ export default function UsersPage() {
           </div>
           <div className="divide-y divide-emerald-950/7 md:hidden dark:divide-white/7">
             {visible.map((user, index) => (
-              <UserCard key={user.id} user={user} index={index} />
+              <UserCard
+                key={user.id}
+                user={user}
+                index={index}
+                canManageStatus={
+                  isReceptionist
+                    ? user.role === "Customer"
+                    : ["SUPER_ADMIN", "ADMIN"].includes(profile.role)
+                }
+                updating={updatingUserId === user.id}
+                onToggleStatus={() => void toggleUserStatus(user)}
+              />
             ))}
           </div>
           {!visible.length ? (
@@ -387,6 +485,7 @@ export default function UsersPage() {
               reduceMotion={Boolean(reduceMotion)}
               onClose={() => setAddOpen(false)}
               onSubmit={addUser}
+              customerOnly={isReceptionist}
             />
           ) : null}
         </AnimatePresence>
@@ -399,17 +498,19 @@ function AddUserDialog({
   reduceMotion,
   onClose,
   onSubmit,
+  customerOnly,
 }: {
   reduceMotion: boolean;
   onClose: () => void;
   onSubmit: (input: NewUserInput) => Promise<void>;
+  customerOnly: boolean;
 }) {
   const [form, setForm] = useState<NewUserInput>({
     name: "",
     email: "",
     phone: null,
-    role: "RECEPTIONIST",
-    department: "Guest Experience",
+    role: customerOnly ? "CUSTOMER" : "RECEPTIONIST",
+    department: customerOnly ? "Guest" : "Guest Experience",
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -458,7 +559,8 @@ function AddUserDialog({
         <div className="flex items-start justify-between border-b border-emerald-950/8 p-5 dark:border-white/8 sm:p-6">
           <div>
             <span className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1.5 text-[0.62rem] font-bold uppercase tracking-[0.16em] text-emerald-700 dark:bg-emerald-300/10 dark:text-emerald-200">
-              <UserRoundCheck className="size-3.5" /> Undang anggota tim
+              <UserRoundCheck className="size-3.5" />{" "}
+              {customerOnly ? "Buat akun customer" : "Undang anggota tim"}
             </span>
             <h2
               id="add-user-title"
@@ -467,8 +569,9 @@ function AddUserDialog({
               Tambah pengguna
             </h2>
             <p className="mt-2 text-sm leading-6 opacity-48">
-              Akun dibuat dengan status Diundang. Akses mengikuti role yang Anda
-              pilih.
+              {customerOnly
+                ? "Akun customer dibuat dengan status Diundang dan dapat diaktifkan oleh Receptionist."
+                : "Akun dibuat dengan status Diundang. Akses mengikuti role yang Anda pilih."}
             </p>
           </div>
           <button
@@ -537,8 +640,10 @@ function AddUserDialog({
                   role: event.target.value as NewUserInput["role"],
                 }))
               }
-              className="h-12 rounded-2xl border border-emerald-950/10 bg-white/72 px-4 text-sm outline-none focus:border-emerald-600/40 focus:ring-4 focus:ring-emerald-500/8 dark:border-white/10 dark:bg-white/5"
+              disabled={customerOnly}
+              className="h-12 rounded-2xl border border-emerald-950/10 bg-white/72 px-4 text-sm outline-none focus:border-emerald-600/40 focus:ring-4 focus:ring-emerald-500/8 disabled:opacity-65 dark:border-white/10 dark:bg-white/5"
             >
+              <option value="CUSTOMER">Customer — akun tamu</option>
               <option value="ADMIN">Admin — operasional harian</option>
               <option value="RECEPTIONIST">
                 Receptionist — booking & tamu
@@ -549,8 +654,9 @@ function AddUserDialog({
               </option>
             </select>
             <span className="font-normal leading-5 opacity-40">
-              Super Admin hanya dapat ditambahkan oleh Super Admin lain melalui
-              kontrol keamanan khusus.
+              {customerOnly
+                ? "Receptionist hanya dapat membuat dan mengelola akun Customer."
+                : "Super Admin hanya dapat ditambahkan oleh Super Admin lain melalui kontrol keamanan khusus."}
             </span>
           </label>
 
@@ -682,10 +788,18 @@ function UserRow({
   user,
   index,
   reduceMotion,
+  canManageStatus,
+  updating,
+  onToggleStatus,
+  allowDetail,
 }: {
   user: AdminUser;
   index: number;
   reduceMotion: boolean;
+  canManageStatus: boolean;
+  updating: boolean;
+  onToggleStatus: () => void;
+  allowDetail: boolean;
 }) {
   const meta = statusMeta[user.status];
   const StatusIcon = meta.icon;
@@ -716,19 +830,56 @@ function UserRow({
       <td className="px-4 py-4 text-xs opacity-45">{user.lastActive}</td>
       <td className="px-5 py-4">
         <div className="flex justify-end gap-1">
-          <Action
-            icon={Eye}
-            label={`Lihat ${user.name}`}
-            href={`/admin/users/${user.id}`}
-          />
-          <Action icon={MoreHorizontal} label={`Aksi ${user.name}`} />
+          {allowDetail ? (
+            <Action
+              icon={Eye}
+              label={`Lihat ${user.name}`}
+              href={`/admin/users/${user.id}`}
+            />
+          ) : null}
+          {canManageStatus ? (
+            <button
+              type="button"
+              onClick={onToggleStatus}
+              disabled={updating}
+              className={cn(
+                "inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-[0.65rem] font-bold disabled:opacity-50",
+                user.status === "ACTIVE"
+                  ? "bg-rose-100 text-rose-700 dark:bg-rose-300/10 dark:text-rose-200"
+                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-300/10 dark:text-emerald-200",
+              )}
+            >
+              {updating ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : user.status === "ACTIVE" ? (
+                <UserRoundX className="size-3.5" />
+              ) : (
+                <UserRoundCheck className="size-3.5" />
+              )}
+              {user.status === "ACTIVE" ? "Tangguhkan" : "Aktifkan"}
+            </button>
+          ) : (
+            <Action icon={MoreHorizontal} label={`Aksi ${user.name}`} />
+          )}
         </div>
       </td>
     </motion.tr>
   );
 }
 
-function UserCard({ user, index }: { user: AdminUser; index: number }) {
+function UserCard({
+  user,
+  index,
+  canManageStatus,
+  updating,
+  onToggleStatus,
+}: {
+  user: AdminUser;
+  index: number;
+  canManageStatus: boolean;
+  updating: boolean;
+  onToggleStatus: () => void;
+}) {
   const meta = statusMeta[user.status];
   return (
     <div className="p-4">
@@ -750,6 +901,22 @@ function UserCard({ user, index }: { user: AdminUser; index: number }) {
         </span>
         <span className="opacity-40">{user.lastActive}</span>
       </div>
+      {canManageStatus ? (
+        <button
+          type="button"
+          onClick={onToggleStatus}
+          disabled={updating}
+          className={cn(
+            "mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-full text-xs font-bold disabled:opacity-50",
+            user.status === "ACTIVE"
+              ? "bg-rose-100 text-rose-700 dark:bg-rose-300/10 dark:text-rose-200"
+              : "bg-emerald-700 text-white",
+          )}
+        >
+          {updating ? <Loader2 className="size-4 animate-spin" /> : null}
+          {user.status === "ACTIVE" ? "Tangguhkan akun" : "Aktifkan akun"}
+        </button>
+      ) : null}
     </div>
   );
 }

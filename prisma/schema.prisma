@@ -27,6 +27,7 @@ enum BookingStatus {
   PENDING
   WAITING_PAYMENT
   CONFIRMED
+  CHECKED_IN
   CANCELLED
   COMPLETED
   EXPIRED
@@ -73,6 +74,7 @@ enum PaymentMethodType {
   CREDIT_CARD
   E_WALLET
   QRIS
+  CASH
 }
 
 enum PaymentProvider {
@@ -400,6 +402,7 @@ model Booking {
   source          String        @default("website") @db.VarChar(40)
   expiresAt       DateTime?
   confirmedAt     DateTime?
+  checkedInAt     DateTime?
   cancelledAt     DateTime?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt

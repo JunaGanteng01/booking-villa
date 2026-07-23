@@ -247,7 +247,7 @@ export async function saveDatabasePaymentMethod({
       },
     });
     if (!booking) return null;
-    if (["CANCELLED", "COMPLETED", "EXPIRED", "REFUNDED"].includes(booking.status)) {
+    if (["CHECKED_IN", "CANCELLED", "COMPLETED", "EXPIRED", "REFUNDED"].includes(booking.status)) {
       throw new BookingPaymentFlowError(
         "BOOKING_NOT_PAYABLE",
         "Booking ini tidak lagi dapat menerima pembayaran.",
@@ -380,7 +380,7 @@ export async function saveDatabaseManualPaymentProof({
       },
     });
     if (!booking) return null;
-    if (["CANCELLED", "COMPLETED", "EXPIRED", "REFUNDED"].includes(booking.status)) {
+    if (["CHECKED_IN", "CANCELLED", "COMPLETED", "EXPIRED", "REFUNDED"].includes(booking.status)) {
       throw new BookingPaymentFlowError(
         "BOOKING_NOT_PAYABLE",
         "Booking ini tidak lagi dapat menerima pembayaran.",
@@ -598,6 +598,7 @@ function paymentMethodConfig(id: string) {
   if (id === "bank-transfer") return { type: "BANK_TRANSFER" as const, provider: "MANUAL" as const };
   if (id === "virtual-account") return { type: "VIRTUAL_ACCOUNT" as const, provider: "MIDTRANS" as const };
   if (id === "credit-card") return { type: "CREDIT_CARD" as const, provider: "STRIPE" as const };
+  if (id === "qris") return { type: "QRIS" as const, provider: "MIDTRANS" as const };
   return { type: "E_WALLET" as const, provider: "MIDTRANS" as const };
 }
 

@@ -63,7 +63,7 @@ export async function listReceptionCheckoutBookings() {
   const records = await prisma.booking.findMany({
     where: {
       OR: [
-        { status: "CONFIRMED" },
+        { status: "CHECKED_IN" },
         { checkout: { is: { status: { in: ["CHECKOUT_REQUESTED", "CHECKED_OUT"] } } } },
       ],
     },
@@ -357,7 +357,7 @@ export function serializeCheckoutBooking(record: CheckoutBooking) {
       canRequest: active && !record.checkout,
       canConfirm:
         active &&
-        record.status === "CONFIRMED" &&
+        record.status === "CHECKED_IN" &&
         record.paymentStatus === "PAID" &&
         record.checkout?.status !== "CHECKED_OUT",
       paymentReady: record.paymentStatus === "PAID",
@@ -383,7 +383,7 @@ function isActiveStay(record: {
 }) {
   const today = dateKey(new Date());
   return (
-    record.status === "CONFIRMED" &&
+    record.status === "CHECKED_IN" &&
     dateKey(record.checkIn) <= today &&
     dateKey(record.checkOut) >= today
   );
