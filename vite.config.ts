@@ -32,6 +32,10 @@ const localBindingConfig = {
 };
 
 export default defineConfig({
+  define: {
+    __dirname: JSON.stringify("/"),
+    __filename: JSON.stringify("/index.js"),
+  },
   plugins: [
     vinext(),
     sites(),
