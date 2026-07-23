@@ -40,7 +40,12 @@ export default function PaymentMethodPage() {
   useEffect(() => {
     try {
       const rawDraft = window.sessionStorage.getItem(bookingDraftStorageKey);
-      setDraft(rawDraft ? (JSON.parse(rawDraft) as BookingDraft) : null);
+      const storedDraft = rawDraft ? (JSON.parse(rawDraft) as BookingDraft) : null;
+      setDraft(storedDraft);
+      const preferredMethod = storedDraft?.checkout?.paymentMethodId;
+      if (preferredMethod && paymentMethods.some((method) => method.id === preferredMethod)) {
+        setSelectedMethodId(preferredMethod);
+      }
     } catch {
       setDraft(null);
     } finally {

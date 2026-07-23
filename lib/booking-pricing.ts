@@ -11,7 +11,12 @@ export type PricingInput = {
   guests?: number | string | null;
   promoCode?: string | null;
   addOns?: string[] | string | null;
+  useCirclePoints?: boolean | null;
 };
+
+export const circlePointBalance = 12_840;
+export const circlePointRedemption = 1_250;
+export const circlePointValue = 100;
 
 export const bookingAddOnCatalog = [
   {
@@ -119,7 +124,18 @@ export function calculateBookingPricing(villa: Villa, input: PricingInput) {
   const promoCode = normalizeString(input.promoCode).toUpperCase();
   const discountBase = subtotal + extraGuestFee;
   const coupon = calculateCouponDiscount(promoCode, discountBase, validation.nights);
-  const taxableAmount = Math.max(0, subtotal + extraGuestFee + addOnTotal - coupon.amount);
+  const beforeCirclePoints = Math.max(
+    0,
+    subtotal + extraGuestFee + addOnTotal - coupon.amount,
+  );
+  const circlePointsUsed = input.useCirclePoints
+    ? Math.min(circlePointBalance, circlePointRedemption)
+    : 0;
+  const circlePointsDiscount = Math.min(
+    beforeCirclePoints,
+    circlePointsUsed * circlePointValue,
+  );
+  const taxableAmount = Math.max(0, beforeCirclePoints - circlePointsDiscount);
   const serviceFee = Math.round(taxableAmount * 0.05);
   const tax = Math.round(taxableAmount * 0.11);
   const total = taxableAmount + serviceFee + tax;
@@ -170,6 +186,12 @@ export function calculateBookingPricing(villa: Villa, input: PricingInput) {
           amount: -coupon.amount,
         },
         {
+          code: "circle_points",
+          type: "DISCOUNT",
+          label: `Penukaran ${circlePointsUsed.toLocaleString("id-ID")} Circle Points`,
+          amount: -circlePointsDiscount,
+        },
+        {
           code: "service_fee",
           type: "SERVICE_FEE",
           label: "Service fee 5%",
@@ -185,7 +207,12 @@ export function calculateBookingPricing(villa: Villa, input: PricingInput) {
       subtotal,
       extraGuestFee,
       addOnTotal,
-      discountTotal: coupon.amount,
+      discountTotal: coupon.amount + circlePointsDiscount,
+      circlePoints: {
+        balance: circlePointBalance,
+        used: circlePointsUsed,
+        amount: circlePointsDiscount,
+      },
       taxableAmount,
       serviceFee,
       tax,

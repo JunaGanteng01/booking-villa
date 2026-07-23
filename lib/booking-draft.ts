@@ -42,12 +42,24 @@ export type BookingDraft = {
     guestService: number;
     addOnsTotal: number;
     discount: number;
+    circlePointsDiscount?: number;
     taxableAmount: number;
     service: number;
     tax: number;
     total: number;
     deposit: number;
     remaining: number;
+  };
+  checkout?: {
+    bookerCity: string;
+    guestSameAsBooker: boolean;
+    guestName: string;
+    guestPhone: string;
+    specialRequests: string[];
+    additionalNote: string;
+    useCirclePoints: boolean;
+    circlePointsUsed: number;
+    paymentMethodId: string;
   };
 };
 
@@ -116,6 +128,15 @@ export const paymentMethods: PaymentMethod[] = [
     eta: "Konfirmasi instan",
     fee: 25000,
     accent: "slate",
+  },
+  {
+    id: "qris",
+    title: "QRIS",
+    description: "Pindai satu kode QR dari aplikasi bank atau dompet digital pilihan Anda.",
+    badge: "Praktis",
+    eta: "Konfirmasi instan",
+    fee: 0,
+    accent: "gold",
   },
   {
     id: "e-wallet",

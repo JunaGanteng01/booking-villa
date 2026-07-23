@@ -1,4 +1,4 @@
-import { Banknote, CheckCircle2, CreditCard, Landmark, Smartphone } from "lucide-react";
+import { Banknote, CheckCircle2, CreditCard, Landmark, QrCode, Smartphone } from "lucide-react";
 import type { ComponentType } from "react";
 import type { PaymentMethod } from "@/lib/booking-draft";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ const methodIcons: Record<string, ComponentType<{ className?: string }>> = {
   "bank-transfer": Landmark,
   "virtual-account": Banknote,
   "credit-card": CreditCard,
+  qris: QrCode,
   "e-wallet": Smartphone,
 };
 

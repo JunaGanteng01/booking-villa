@@ -48,8 +48,8 @@ export async function POST(request: Request) {
   }
 
   const villaId = normalizeString(body.villaId);
-  const guestName = userName || userEmail.split("@")[0];
-  const guestEmail = userEmail;
+  const guestName = normalizeString(body.guestName) || userName || userEmail.split("@")[0];
+  const guestEmail = normalizeString(body.guestEmail).toLowerCase() || userEmail;
   const guestPhone = normalizeString(body.guestPhone);
   const specialRequest = normalizeString(body.specialRequest);
 
