@@ -32,3 +32,89 @@ Prisma Client already generated; skipping prisma generate.
  GET /api/admin/checkouts 200 in 43ms
  GET /api/admin/analytics/metrics?period=30d 200 in 44ms
  GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 78ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 33ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 43ms
+ GET /api/admin/checkouts 200 in 49ms
+ GET /api/admin/checkouts 200 in 23ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 26ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 29ms
+ GET /api/admin/checkouts 200 in 23ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 31ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 33ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 80ms
+ GET /api/admin/checkouts 200 in 91ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 86ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 21ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 45ms
+ GET /api/admin/checkouts 200 in 47ms
+ GET /api/admin/checkouts 200 in 23ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 27ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 44ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 24ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 37ms
+ GET /api/admin/checkouts 200 in 43ms
+ GET /api/admin/checkouts 200 in 21ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 27ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 31ms
+ GET /api/admin/checkouts 200 in 23ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 35ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 42ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 251ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 243ms
+ GET /payment/status 200 in 1.4s (compile: 42ms, render: 1.3s)
+ GET /api/admin/analytics/metrics?period=30d 200 in 65ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 66ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 57ms
+ GET /admin 200 in 398ms (compile: 7ms, render: 387ms)
+ GET /api/auth/session 200 in 9ms
+ GET /api/auth/session 200 in 11ms
+ GET /api/admin/analytics/metrics?period=30d 200 in 32ms
+ GET /admin/checkouts?_rsc=oUVIrF7L-4B_PPhh 200 in 17ms (compile: 8ms, render: 9ms)
+ GET /api/auth/session 200 in 10ms
+ GET /api/auth/session 200 in 13ms
+ GET /api/admin/checkouts 200 in 57ms
+ GET /api/admin/checkouts 200 in 20ms
+ GET /api/bookings/VK-955901-3RJFB/payment-status 200 in 21ms
+ GET /api/admin/checkouts 200 in 40ms
+ GET /payment/manual?_rsc=TQ2P5HEx853_qSnc 200 in 14ms (compile: 6ms, render: 8ms)
+ GET /payment?bookingId=VK-955901-3RJFB&_rsc=TxeedAhz2qOhoz0- 200 in 14ms (compile: 6ms, render: 8ms)
+ GET /booking/summary?_rsc=RdXO4KG73ec9stZn 200 in 14ms (compile: 6ms, render: 8ms)
+ GET /villas/nara-jungle?_rsc=SXY9NSOhsiYPwVM5 200 in 14ms (compile: 6ms, render: 8ms)
+ GET /api/auth/session 200 in 4ms
+ GET /villas?_rsc=K1IHsAgpNOfkN_0J 200 in 16ms (compile: 7ms, render: 9ms)
+ GET /api/auth/session 200 in 4ms
+ GET /admin/bookings?_rsc=SXY9NSOhsiYPwVM5 200 in 17ms (compile: 7ms, render: 10ms)
+ GET /api/auth/session 200 in 7ms
+ GET /api/auth/session 200 in 10ms
+ GET /api/admin/bookings 200 in 24ms
+ GET /admin/checkouts?_rsc=1Mqnhnnu2nYxf5Ty 200 in 12ms (compile: 5ms, render: 7ms)
+ GET /api/auth/session 200 in 10ms
+ GET /api/auth/session 200 in 16ms
+ GET /api/admin/checkouts 200 in 41ms
+ GET /api/admin/checkouts 200 in 18ms
+ GET /admin/villas?_rsc=n7nJULCvwmONNFwL 200 in 12ms (compile: 6ms, render: 6ms)
+ GET /api/auth/session 200 in 6ms
+ GET /api/auth/session 200 in 10ms
+ GET /api/admin/villas?limit=100 200 in 53ms
+ GET /api/admin/checkouts 200 in 21ms
+ GET /api/admin/checkouts 200 in 21ms
+ GET /api/admin/checkouts 200 in 21ms
+ GET /api/admin/checkouts 200 in 17ms
+ GET /api/admin/checkouts 200 in 17ms
+ GET /api/admin/checkouts 200 in 21ms
+ GET /api/admin/checkouts 200 in 24ms
+ GET /api/admin/checkouts 200 in 28ms
+ GET /api/admin/checkouts 200 in 23ms
+ GET /api/admin/checkouts 200 in 25ms
+ GET /api/admin/checkouts 200 in 23ms
+ GET /api/admin/checkouts 200 in 25ms
+ GET /api/admin/checkouts 200 in 20ms
+ GET /api/admin/checkouts 200 in 20ms
+ GET /api/admin/checkouts 200 in 25ms
+ GET /api/admin/checkouts 200 in 18ms
+ GET /api/admin/checkouts 200 in 20ms
+ GET /api/admin/checkouts 200 in 18ms
+ GET /api/admin/checkouts 200 in 20ms
+ GET /api/admin/checkouts 200 in 75ms
+ GET /api/admin/checkouts 200 in 18ms
+ GET /api/admin/checkouts 500 in 51ms

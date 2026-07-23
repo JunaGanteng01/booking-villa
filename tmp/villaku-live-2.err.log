@@ -1,2 +1,21 @@
 (node:6296) ExperimentalWarning: glob is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
+Reception checkout list error PrismaClientKnownRequestError: 
+Invalid `prisma.booking.findMany()` invocation:
+
+
+Server has closed the connection.
+    at ei.handleRequestError (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:6802:10)
+    at ei.handleAndLogRequestError (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:6767:9)
+    at ei.request (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:6750:9)
+    at async a (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:7375:13)
+    at async listReceptionCheckoutBookings (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:74:18)
+    at async Object.GET [as handlerFn] (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:21:20)
+    at async runAppRouteHandler (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:41:19)
+    at async executeAppRouteHandler (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:50:46)
+    at async route (eval at runInlinedModule (file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/vite/dist/node/module-runner.js:1000:9), <anonymous>:315:16)
+    at async file:///C:/Users/user/Documents/web%20booking%20vila/node_modules/@vitejs/plugin-rsc/dist/plugin-BhzHKRFo.js:786:8 {
+  code: 'P1017',
+  meta: { modelName: 'Booking' },
+  clientVersion: '6.19.3'
+}
